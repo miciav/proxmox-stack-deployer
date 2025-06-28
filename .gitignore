@@ -1,0 +1,23 @@
+# macOS
+.DS_Store
+
+# Terraform / OpenTofu
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+.terraform.tfstate.lock.info
+
+# Logs
+logs/
+*.log
+
+# Ansible
+inventory.ini
+
+# IDEs
+.vscode/
+
+# Other generated files
+ansible_debug_script.sh
+terraform.tfvars
