@@ -25,7 +25,7 @@ variable "proxmox_password" {
 variable "target_node" {
   description = "Nome del nodo Proxmox"
   type        = string
-  default     = "titan-inside" # Updated to match your node name
+  default     = "default" # Updated to match your node name
 }
 
 variable "template_name" {
