@@ -72,12 +72,32 @@ main() {
     print_status "IP delle VM: $(echo "$vm_ips" | jq -r 'values | join(", ")')"
     
     # Configura port forwarding per tutte le VM se richiesto
-    local vm_ports_str=""
+    local vm_ssh_ports_str=""
+    local vm_k3s_ports_str=""
     if [[ "$SKIP_NAT" != "true" ]]; then
-        print_status "Configurazione del port forwarding per le VM..."
-        vm_ports_str=$(setup_multiple_port_forwarding "$vm_ips" "$(basename "$(pwd)")" "$proxmox_host")
+        if [[ -z "$PROXMOX_HOST" ]]; then
+            print_warning "PROXMOX_HOST non è impostato. Saltando la configurazione del port forwarding."
+        else
+            print_status "Configurazione del port forwarding per SSH (porta 22) per le VM..."
+            if ! SSH_PORTS_RAW_OUTPUT=$(setup_multiple_port_forwarding "$vm_ips" "$(basename "$(pwd)")" "$PROXMOX_HOST" "22" 2>&1); then
+                print_error "Errore durante la configurazione del port forwarding SSH:"
+                echo "$SSH_PORTS_RAW_OUTPUT" | while read -r line; do print_error "  $line"; done
+                exit 1
+            fi
+            vm_ssh_ports_str=$(echo "$SSH_PORTS_RAW_OUTPUT" | grep -E '^[a-zA-Z0-9_-]+:[0-9]+$')
+
+            print_status "Port forwarding SSH configurato: $vm_ssh_ports_str"
+
+            print_status "Configurazione del port forwarding per K3s API (porta $K3S_API_PORT) per le VM..."
+            if ! K3S_API_PORTS_RAW_OUTPUT=$(setup_multiple_port_forwarding "$vm_ips" "$(basename "$(pwd)")" "$PROXMOX_HOST" "$K3S_API_PORT" 2>&1); then
+                print_error "Errore durante la configurazione del port forwarding K3s API:"
+                echo "$K3S_API_PORTS_RAW_OUTPUT" | while read -r line; do print_error "  $line"; done
+                exit 1
+            fi
+            vm_k3s_ports_str=$(echo "$K3S_API_PORTS_RAW_OUTPUT" | grep -E '^[a-zA-Z0-9_-]+:[0-9]+$')
+            print_status "Port forwarding K3s API configurato: $vm_k3s_ports_str"
+        fi
     fi
-    print_status "Port forwarding configurato: $vm_ports_str"
     
     # Verifica connettività SSH per tutte le VM
     local failed_vms=()
@@ -87,13 +107,13 @@ main() {
         print_status "Verificando connettività SSH per VM $vm_name \($vm_ip\)..."
         
         local ssh_port=22
-        if [[ -n "$vm_ports_str" ]]; then
-            local port_line
-            port_line=$(echo "$vm_ports_str" | grep "^${vm_name}:")
-            if [[ -n "$port_line" ]]; then
-                ssh_port=$(echo "$port_line" | cut -d':' -f2)
-            fi
+        if [[ -n "$vm_ssh_ports_str" ]]; then
+        local port_line
+        port_line=$(echo "$vm_ssh_ports_str" | grep "^${vm_name}:")
+        if [[ -n "$port_line" ]]; then
+            ssh_port=$(echo "$port_line" | cut -d':' -f2)
         fi
+    fi
         
         if wait_for_ssh "$vm_ip" "$vm_name" "$ssh_port"; then
             successful_vms+=("$vm_name:$vm_ip")
@@ -133,10 +153,9 @@ main() {
     if [[ "${SKIP_ANSIBLE:-false}" != "true" ]]; then
         print_status "Avvio configurazione Ansible per ${#vm_ips[@]} VM..."
         
-        if ! run_ansible_configuration_multiple "$vm_ips" "$vm_ports_str"; then
+        if ! run_ansible_configuration_multiple "$vm_ips" "$vm_ssh_ports_str" "$vm_k3s_ports_str"; then
             print_error "Configurazione Ansible fallita per alcune VM"
             print_info "Infrastruttura creata con successo, solo la configurazione necessita intervento manuale"
-            print_info "Comandi per la configurazione manuale:"
             print_info "  cd $(dirname $INVENTORY_FILE)"
             print_info "  ansible-playbook -i $INVENTORY_FILE $PLAYBOOK_FILE -v"
             
@@ -145,6 +164,14 @@ main() {
             export FAILED_ANSIBLE_PLAYBOOK="$PLAYBOOK_FILE"
         else
             print_success "Configurazione Ansible completata con successo"
+            
+            # Esegui il playbook K3s
+            print_status "Esecuzione playbook K3s..."
+            if ! ansible-playbook -i "$INVENTORY_FILE" "k3s_install.yml" --extra-vars "proxmox_host=$PROXMOX_HOST"; then
+                print_error "Errore nell'esecuzione del playbook K3s"
+                return 1
+            fi
+            print_success "✓ Playbook K3s completato con successo"
         fi
     else
         print_status "Configurazione Ansible saltata (SKIP_ANSIBLE=true)"
@@ -152,7 +179,7 @@ main() {
     fi
     
     # Mostra informazioni finali per tutte le VM
-    show_final_info_multiple "$vm_summary" "$vm_ports_str"
+    show_final_info_multiple "$vm_summary" "$vm_ssh_ports_str"
     
     print_status "Deployment completato alle $(date)"
 }

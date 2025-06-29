@@ -29,7 +29,7 @@ EOF
     fi
 
     # Leggi ogni VM dallo standard input
-    while IFS=':' read -r vm_name vm_ip vm_port; do
+    while IFS=':' read -r vm_name vm_ip vm_port vm_k3s_api_port; do
         local ansible_host="$vm_ip"
         local ansible_port="${vm_port:-22}" # Usa 22 come default se la porta non è specificata
 
@@ -43,7 +43,12 @@ EOF
             ansible_host="$EXTERNAL_SSH_HOST"
         fi
 
-        echo "$vm_name ansible_host=$ansible_host ansible_port=$ansible_port ansible_user=$VM_USERNAME ansible_ssh_private_key_file=$SSH_KEY_PATH" >> "$inventory_file"
+        local k3s_api_port_external_entry=""
+        if [[ -n "$vm_k3s_api_port" ]]; then
+            k3s_api_port_external_entry="k3s_api_port_external=$vm_k3s_api_port"
+        fi
+
+        echo "$vm_name ansible_host=$ansible_host ansible_port=$ansible_port ansible_user=$VM_USERNAME ansible_ssh_private_key_file=$SSH_KEY_PATH $k3s_api_port_external_entry" >> "$inventory_file"
     done
 
     # Aggiungi le variabili comuni
@@ -116,7 +121,8 @@ run_ansible_configuration() {
 # Funzione per eseguire configurazione Ansible su multiple VM
 run_ansible_configuration_multiple() {
     local vm_ips_json="$1"
-    local vm_ports_str="$2"
+    local vm_ssh_ports_str="$2"
+    local vm_k3s_ports_str="$3"
 
     print_header "CONFIGURAZIONE ANSIBLE PER MULTIPLE VM"
 
@@ -128,15 +134,24 @@ run_ansible_configuration_multiple() {
 
     local vm_entries_formatted
     vm_entries_formatted=$(echo "$vm_ips_json" | jq -r 'to_entries[] | "\(.key) \(.value)"' | while read -r vm_name vm_ip; do
-        local vm_port=22 # Default port
-        if [[ -n "$vm_ports_str" ]]; then
+        local vm_ssh_port=22 # Default SSH port
+        if [[ -n "$vm_ssh_ports_str" ]]; then
             local port_line
-            port_line=$(echo "$vm_ports_str" | grep "^${vm_name}:")
+            port_line=$(echo "$vm_ssh_ports_str" | grep "^${vm_name}:")
             if [[ -n "$port_line" ]]; then
-                vm_port=$(echo "$port_line" | cut -d':' -f2)
+                vm_ssh_port=$(echo "$port_line" | cut -d':' -f2)
             fi
         fi
-        echo "$vm_name:$vm_ip:$vm_port"
+
+        local vm_k3s_api_port="" # K3s API port
+        if [[ -n "$vm_k3s_ports_str" ]]; then
+            local k3s_port_line
+            k3s_port_line=$(echo "$vm_k3s_ports_str" | grep "^${vm_name}:")
+            if [[ -n "$k3s_port_line" ]]; then
+                vm_k3s_api_port=$(echo "$k3s_port_line" | cut -d':' -f2)
+            fi
+        fi
+        echo "$vm_name:$vm_ip:$vm_ssh_port:$vm_k3s_api_port"
     done)
 
     # Genera l'inventario passando i dati tramite pipe

@@ -3,8 +3,6 @@
 # lib/networking.sh - Funzioni per la configurazione del networking e port forwarding
 
 # Script remoto per la configurazione del port forwarding
-
-
 # Script remoto per la configurazione del port forwarding
 get_remote_port_forwarding_script() {
     cat << 'EOF_REMOTE_SCRIPT'
@@ -13,25 +11,26 @@ set -e
 
 # Debug: stampa informazioni di avvio
 echo "[DEBUG] Avvio script networking.sh" >&2
-echo "[DEBUG] Parametri ricevuti: VM_IP=$1, EXTERNAL_PORT=$2, VM_NAME=$3, EXTERNAL_INTERFACE=$4" >&2
+echo "[DEBUG] Parametri ricevuti: VM_IP=$1, EXTERNAL_PORT=$2, VM_NAME=$3, EXTERNAL_INTERFACE=$4, TARGET_PORT=$5" >&2
 
 VM_IP="$1"
 EXTERNAL_PORT="$2"
 VM_NAME="$3"
 EXTERNAL_INTERFACE="$4"
+TARGET_PORT="${5:-22}" # Default a 22 se non specificato
 
 # Verifica parametri obbligatori
 if [[ -z "$VM_IP" || -z "$EXTERNAL_PORT" || -z "$VM_NAME" || -z "$EXTERNAL_INTERFACE" ]]; then
     echo "[ERROR] Parametri mancanti!" >&2
-    echo "Uso: $0 <VM_IP> <EXTERNAL_PORT> <VM_NAME> <EXTERNAL_INTERFACE>" >&2
+    echo "Uso: $0 <VM_IP> <EXTERNAL_PORT> <VM_NAME> <EXTERNAL_INTERFACE> [TARGET_PORT]" >&2
     exit 1
 fi
 
 echo "[DEBUG] Parametri validati con successo" >&2
 
-# Funzione per trovare una porta esistente per questa VM
+# Funzione per trovare una porta esistente per questa VM e target port
 find_existing_port() {
-    echo "[DEBUG] Esecuzione find_existing_port per VM_IP: $VM_IP" >&2
+    echo "[DEBUG] Esecuzione find_existing_port per VM_IP: $VM_IP, TARGET_PORT: $TARGET_PORT" >&2
     
     if [[ ! -f "/etc/network/interfaces" ]]; then
         echo "[DEBUG] File /etc/network/interfaces non trovato" >&2
@@ -39,8 +38,8 @@ find_existing_port() {
     fi
     
     local result
-    result=$(awk -v vm_ip="$VM_IP" '
-        /post-up/ && /--to/ && $0 ~ vm_ip":22" {
+    result=$(awk -v vm_ip="$VM_IP" -v target_port="$TARGET_PORT" '
+        /post-up/ && /--to/ && $0 ~ vm_ip":"target_port {
             for (i=1; i<=NF; i++) {
                 if ($i == "--dport") {
                     print $(i+1);
@@ -79,69 +78,125 @@ backup_file="/etc/network/interfaces.backup.$(date +%Y%m%d_%H%M%S)"
 echo "[DEBUG] Creazione backup: $backup_file" >&2
 cp /etc/network/interfaces "$backup_file"
 
-# Definisci le regole da aggiungere
-POST_UP="    post-up iptables -t nat -A PREROUTING -i $EXTERNAL_INTERFACE -p tcp --dport $EXTERNAL_PORT -j DNAT --to $VM_IP:22"
-POST_DOWN="    post-down iptables -t nat -D PREROUTING -i $EXTERNAL_INTERFACE -p tcp --dport $EXTERNAL_PORT -j DNAT --to $VM_IP:22"
+# Verifica che l'interfaccia esista nel file
+if ! grep -q "^[[:space:]]*iface[[:space:]]\+$EXTERNAL_INTERFACE[[:space:]]" /etc/network/interfaces; then
+    echo "[ERROR] Interfaccia $EXTERNAL_INTERFACE non trovata in /etc/network/interfaces" >&2
+    exit 1
+fi
+
+# Definisci le regole da aggiungere - usa up/down invece di post-up/post-down
+POST_UP="    post-up iptables -t nat -A PREROUTING -i $EXTERNAL_INTERFACE -p tcp --dport $EXTERNAL_PORT -j DNAT --to $VM_IP:$TARGET_PORT"
+POST_DOWN="    post-down iptables -t nat -D PREROUTING -i $EXTERNAL_INTERFACE -p tcp --dport $EXTERNAL_PORT -j DNAT --to $VM_IP:$TARGET_PORT"
 
 echo "[DEBUG] Regole definite:" >&2
 echo "[DEBUG] POST_UP: $POST_UP" >&2
 echo "[DEBUG] POST_DOWN: $POST_DOWN" >&2
 
-# Crea file temporaneo
+# Usa un approccio più semplice e sicuro con awk
 temp_file=$(mktemp)
 echo "[DEBUG] File temporaneo creato: $temp_file" >&2
 
-in_interface=false
-rules_added=false
+# Usa awk per processare il file in modo più sicuro
+echo "[DEBUG] Inizio processamento con AWK" >&2
+awk -v interface="$EXTERNAL_INTERFACE" \
+    -v post_up="$POST_UP" \
+    -v post_down="$POST_DOWN" \
+    -v vm_name="$VM_NAME" \
+    -v vm_ip="$VM_IP" \
+    -v target_port="$TARGET_PORT" \
+    -v external_port="$EXTERNAL_PORT" '
+BEGIN { 
+    in_target_interface = 0
+    rules_added = 0
+    print "[DEBUG] AWK: Cerco interfaccia: " interface > "/dev/stderr"
+}
 
-# Processa il file interfaces
-echo "[DEBUG] Inizio processamento /etc/network/interfaces" >&2
-while IFS= read -r line; do
-    echo "$line" >> "$temp_file"
-    
-    if [[ "$line" =~ ^[[:space:]]*iface[[:space:]]+$EXTERNAL_INTERFACE ]]; then
-        echo "[DEBUG] Trovata sezione interfaccia: $EXTERNAL_INTERFACE" >&2
-        in_interface=true
-    elif [[ "$line" =~ ^[[:space:]]*iface[[:space:]] ]] && [[ "$in_interface" == true ]]; then
-        if [[ "$rules_added" == false ]]; then
-            echo "[DEBUG] Aggiunta regole prima della prossima interfaccia" >&2
-            echo "" >> "$temp_file"
-            echo "    # Port forwarding per $VM_NAME ($VM_IP)" >> "$temp_file"
-            echo "$POST_UP" >> "$temp_file"
-            echo "$POST_DOWN" >> "$temp_file"
-            rules_added=true
-        fi
-        in_interface=false
-    fi
-done < /etc/network/interfaces
+# Rileva inizio della sezione dell interfaccia target
+/^[[:space:]]*iface[[:space:]]+/ {
+    print "[DEBUG] AWK: Trovata riga iface: " $0 > "/dev/stderr"
+    if ($2 == interface && in_target_interface == 0) {
+        print "[DEBUG] AWK: Entro nella sezione " interface > "/dev/stderr"
+        in_target_interface = 1
+        print $0
+        next
+    } else if (in_target_interface == 1 && $2 != interface) {
+        # Nuova interfaccia trovata, aggiungi le regole prima di questa
+        if (rules_added == 0) {
+            print "[DEBUG] AWK: Aggiungo regole prima della nuova interfaccia " $2 > "/dev/stderr"
+            print ""
+            print "    # Port forwarding per " vm_name " (" vm_ip ":" target_port " -> " external_port ")"
+            print post_up
+            print post_down
+            rules_added = 1
+        }
+        in_target_interface = 0
+    }
+}
 
-# Se siamo ancora nell'interfaccia alla fine del file
-if [[ "$in_interface" == true ]] && [[ "$rules_added" == false ]]; then
-    echo "[DEBUG] Aggiunta regole alla fine del file" >&2
-    echo "" >> "$temp_file"
-    echo "    # Port forwarding per $VM_NAME ($VM_IP)" >> "$temp_file"
-    echo "$POST_UP" >> "$temp_file"
-    echo "$POST_DOWN" >> "$temp_file"
-    rules_added=true
-fi
+# Stampa tutte le altre righe
+{
+    print $0
+}
 
-if [[ "$rules_added" == false ]]; then
-    echo "[ERROR] Interfaccia $EXTERNAL_INTERFACE non trovata in /etc/network/interfaces" >&2
+END {
+    # Se siamo ancora nell interfaccia target alla fine del file
+    if (in_target_interface == 1 && rules_added == 0) {
+        print "[DEBUG] AWK: Aggiungo regole alla fine del file" > "/dev/stderr"
+        print ""
+        print "    # Port forwarding per " vm_name " (" vm_ip ":" target_port " -> " external_port ")"
+        print post_up
+        print post_down
+    }
+    print "[DEBUG] AWK: Processamento completato, rules_added=" rules_added > "/dev/stderr"
+}
+' /etc/network/interfaces > "$temp_file"
+
+echo "[DEBUG] Processamento file completato" >&2
+
+# Verifica che il file temporaneo non sia vuoto
+if [[ ! -s "$temp_file" ]]; then
+    echo "[ERROR] Il file temporaneo è vuoto - possibile errore nel processamento" >&2
     rm "$temp_file"
     exit 1
 fi
+
+echo "[DEBUG] Dimensione file temporaneo: $(wc -l < "$temp_file") righe" >&2
+echo "[DEBUG] Prime 10 righe del file temporaneo:" >&2
+head -10 "$temp_file" >&2
+echo "[DEBUG] Ultime 10 righe del file temporaneo:" >&2
+tail -10 "$temp_file" >&2
 
 # Sostituisci il file originale
 echo "[DEBUG] Sostituzione file interfaces" >&2
 mv "$temp_file" /etc/network/interfaces
 
-# Applica la regola iptables immediatamente
-echo "[DEBUG] Applicazione regola iptables" >&2
-if ! iptables -t nat -C PREROUTING -i "$EXTERNAL_INTERFACE" -p tcp --dport "$EXTERNAL_PORT" -j DNAT --to "$VM_IP:22" 2>/dev/null; then
-    echo "[DEBUG] Regola non esistente, aggiunta in corso" >&2
-    iptables -t nat -A PREROUTING -i "$EXTERNAL_INTERFACE" -p tcp --dport "$EXTERNAL_PORT" -j DNAT --to "$VM_IP:22"
-else
-    echo "[DEBUG] Regola già esistente in iptables" >&2
+# Verifica la sintassi del nuovo file
+echo "[DEBUG] Verifica sintassi del nuovo file interfaces" >&2
+echo "[DEBUG] Contenuto del nuovo file:" >&2
+cat /etc/network/interfaces >&2
+echo "[DEBUG] Fine contenuto file" >&2
+
+# Verifica più permissiva - controlla solo che il file non sia malformato
+if ! ifquery --list &>/dev/null; then
+    echo "[ERROR] Sintassi del file interfaces non valida" >&2
+    echo "[DEBUG] Ripristino backup: $backup_file" >&2
+    mv "$backup_file" /etc/network/interfaces
+    exit 1
+fi
+
+# Applica configurazione con ifreload - ma prima prova solo l'interfaccia specifica
+echo "[DEBUG] Test ricaricamento solo interfaccia $EXTERNAL_INTERFACE" >&2
+if ! ifreload "$EXTERNAL_INTERFACE"; then
+    echo "[WARNING] Errore ricaricando solo $EXTERNAL_INTERFACE, provo con tutte le interfacce" >&2
+    # Se fallisce, prova con tutte
+    if ! sudo ifreload -a; then
+        echo "[ERROR] Errore durante il ricaricamento delle interfacce" >&2
+        echo "[DEBUG] Ripristino backup: $backup_file" >&2
+        mv "$backup_file" /etc/network/interfaces
+        # Prova a ricaricare il backup
+        sudo ifreload -a || true
+        exit 1
+    fi
 fi
 
 echo "[DEBUG] Configurazione completata con successo" >&2
@@ -225,6 +280,7 @@ setup_multiple_port_forwarding() {
     local vm_ips_json="$1"
     local project_name="${2:-proxmox-vms}"
     local proxmox_host="${3:-$PROXMOX_HOST}"
+    local target_port="${4:-22}" # Nuovo parametro per la porta target (es. 22 per SSH, 6443 per K3s API)
     # FORZA DEBUG PER TROUBLESHOOTING (rimuovi dopo aver risolto)
     local OLD_DEBUG="$DEBUG"
     export DEBUG=true
@@ -234,6 +290,7 @@ setup_multiple_port_forwarding() {
     print_debug "Raw vm_ips_json in setup_multiple_port_forwarding: $vm_ips_json"
     print_debug "Project name: $project_name"
     print_debug "Proxmox host: $proxmox_host"
+    print_debug "Target port: $target_port"
     
     # Verifica se abbiamo le informazioni del Proxmox
     print_debug "Verificando variabili di ambiente..."
@@ -287,7 +344,7 @@ setup_multiple_port_forwarding() {
     # CORREZIONE: Usa process substitution invece di pipe per evitare subshell
     while IFS=' ' read -r vm_name vm_ip; do
         print_debug "=== Elaborando VM: $vm_name con IP: $vm_ip ==="
-        print_nat "Configurando port forwarding per VM $vm_name ($vm_ip)..."
+        print_nat "Configurando port forwarding per VM $vm_name ($vm_ip) sulla porta $target_port..."
         
         # Verifica che vm_name e vm_ip non siano vuoti
         if [[ -z "$vm_name" || -z "$vm_ip" ]]; then
@@ -326,7 +383,7 @@ setup_multiple_port_forwarding() {
         fi
         
         print_debug "Eseguendo SSH su $PROXMOX_USER@$PROXMOX_HOST..."
-        print_debug "Parametri SSH: vm_ip=$vm_ip, external_port=$external_port_to_try, vm_name=$vm_name, interface=$EXTERNAL_INTERFACE"
+        print_debug "Parametri SSH: vm_ip=$vm_ip, external_port=$external_port_to_try, vm_name=$vm_name, interface=$EXTERNAL_INTERFACE, target_port=$target_port"
         
         # Esegui script remoto e cattura l'output (la porta)
         local configured_port ssh_exit_code
@@ -339,7 +396,7 @@ setup_multiple_port_forwarding() {
             -o ServerAliveInterval=10 \
             -o ServerAliveCountMax=3 \
             "$PROXMOX_USER@$PROXMOX_HOST" \
-            "bash -s \"$vm_ip\" \"$external_port_to_try\" \"$vm_name\" \"$EXTERNAL_INTERFACE\"" <<<"$remote_script" 2>"$ssh_stderr_file")
+            "bash -s \"$vm_ip\" \"$external_port_to_try\" \"$vm_name\" \"$EXTERNAL_INTERFACE\" \"$target_port\"" <<<"$remote_script" 2>"$ssh_stderr_file")
         ssh_exit_code=$?
 
         print_debug "SSH exit code: $ssh_exit_code"

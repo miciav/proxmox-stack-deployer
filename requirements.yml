@@ -1,0 +1,4 @@
+roles:
+  - name: k3s-io.k3s-ansible
+    src: https://github.com/k3s-io/k3s-ansible
+    version: master
