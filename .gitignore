@@ -14,6 +14,7 @@ logs/
 
 # Ansible
 inventory.ini
+./ansible
 
 # IDEs
 .vscode/
