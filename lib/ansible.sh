@@ -31,16 +31,11 @@ EOF
     # Leggi ogni VM dallo standard input
     while IFS=':' read -r vm_name vm_ip vm_port vm_k3s_api_port; do
         local ansible_host="$vm_ip"
-        local ansible_port="${vm_port:-22}" # Usa 22 come default se la porta non è specificata
+        local ansible_port="$vm_port"
 
-        # Se PROXMOX_HOST è definito e EXTERNAL_SSH_HOST non lo è, usa PROXMOX_HOST come host Ansible
-        if [[ -n "${PROXMOX_HOST:-}" ]] && [[ -z "${EXTERNAL_SSH_HOST:-}" ]]; then
+        # Se il NAT è attivo (SKIP_NAT non è true), usa PROXMOX_HOST come ansible_host
+        if [[ "$SKIP_NAT" != "true" ]] && [[ -n "${PROXMOX_HOST:-}" ]]; then
             ansible_host="$PROXMOX_HOST"
-        fi
-
-        # Se abbiamo configurato il port forwarding (EXTERNAL_SSH_HOST), questo prende la precedenza
-        if [[ -n "${EXTERNAL_SSH_HOST:-}" ]]; then
-            ansible_host="$EXTERNAL_SSH_HOST"
         fi
 
         local k3s_api_port_external_entry=""
@@ -134,22 +129,16 @@ run_ansible_configuration_multiple() {
 
     local vm_entries_formatted
     vm_entries_formatted=$(echo "$vm_ips_json" | jq -r 'to_entries[] | "\(.key) \(.value)"' | while read -r vm_name vm_ip; do
-        local vm_ssh_port=22 # Default SSH port
-        if [[ -n "$vm_ssh_ports_str" ]]; then
-            local port_line
-            port_line=$(echo "$vm_ssh_ports_str" | grep "^${vm_name}:")
-            if [[ -n "$port_line" ]]; then
-                vm_ssh_port=$(echo "$port_line" | cut -d':' -f2)
-            fi
+        local vm_ssh_port
+        if ! vm_ssh_port=$(get_port_for_vm "$vm_name" "$vm_ssh_ports_str"); then
+            print_error "Impossibile trovare la porta SSH per VM $vm_name. Assicurati che il port forwarding sia configurato correttamente."
+            return 1
         fi
 
-        local vm_k3s_api_port="" # K3s API port
-        if [[ -n "$vm_k3s_ports_str" ]]; then
-            local k3s_port_line
-            k3s_port_line=$(echo "$vm_k3s_ports_str" | grep "^${vm_name}:")
-            if [[ -n "$k3s_port_line" ]]; then
-                vm_k3s_api_port=$(echo "$k3s_port_line" | cut -d':' -f2)
-            fi
+        local vm_k3s_api_port
+        if ! vm_k3s_api_port=$(get_port_for_vm "$vm_name" "$vm_k3s_ports_str"); then
+            print_warning "Impossibile trovare la porta K3s API per VM $vm_name. Continuando senza di essa."
+            vm_k3s_api_port=""
         fi
         echo "$vm_name:$vm_ip:$vm_ssh_port:$vm_k3s_api_port"
     done)
@@ -166,4 +155,33 @@ run_ansible_configuration_multiple() {
 
     print_ansible "✓ Configurazione Ansible completata con successo"
     return 0
+}
+
+# Funzione per generare inventory per le regole NAT
+generate_nat_rules_inventory() {
+    local inventory_file="$1"
+    local terraform_output_json="$2"
+
+    print_ansible "Generazione dell'inventory per le regole NAT..."
+
+    # Inizia il file di inventory
+    cat > "$inventory_file" << EOF
+[proxmox_hosts]
+$PROXMOX_HOST ansible_host=$PROXMOX_HOST ansible_user=$PROXMOX_USER ansible_ssh_private_key_file=$PROXMOX_SSH_KEY
+
+[proxmox_hosts:vars]
+interfaces_file=/etc/network/interfaces
+target_interface=$INTERNAL_INTERFACE
+source_interface=$EXTERNAL_INTERFACE
+ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+ansible_python_interpreter=/usr/bin/python3
+
+[port_mappings]
+EOF
+
+    # Aggiungi le mappature delle porte
+    echo "$terraform_output_json" | jq -r --arg user "$CI_USER" '.vm_summary.value | to_entries[] | .key as $name | .value | "\($name)_ssh vm_id=\(.id) vm_name=\($name) vm_ip=\(.ip) vm_port=22 service=SSH vm_user=\($user)"' >> "$inventory_file"
+    echo "$terraform_output_json" | jq -r '.vm_summary.value | to_entries[] | .key as $name | .value | "\($name)_k3s vm_id=\(.id) vm_name=\($name) vm_ip=\(.ip) vm_port=6443 service=k3s"' >> "$inventory_file"
+
+    print_ansible "✓ Inventory per regole NAT creato: $inventory_file"
 }

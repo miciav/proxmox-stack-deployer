@@ -15,6 +15,141 @@ source "$(dirname "$0")/lib/utils.sh"     # Funzioni di utilità
 # Assicura che cleanup venga chiamata all'uscita
 trap cleanup EXIT
 
+# Funzione per il parsing degli argomenti
+parse_arguments() {
+    # Inizializza variabili globali con valori di default
+    FORCE_REDEPLOY="false"
+    CONTINUE_IF_DEPLOYED="false"
+    SKIP_NAT="false"
+    SKIP_ANSIBLE="false"
+    WORKSPACE=""
+    AUTO_APPROVE="false"
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --force-redeploy)
+                FORCE_REDEPLOY="true"
+                shift
+                ;;
+            --continue-if-deployed)
+                CONTINUE_IF_DEPLOYED="true"
+                shift
+                ;;
+            --skip-nat)
+                SKIP_NAT="true"
+                shift
+                ;;
+            --skip-ansible)
+                SKIP_ANSIBLE="true"
+                shift
+                ;;
+            --workspace)
+                WORKSPACE="$2"
+                shift 2
+                ;;
+            --auto-approve)
+                AUTO_APPROVE="true"
+                shift
+                ;;
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            *)
+                print_error "Argomento sconosciuto: $1"
+                show_help
+                exit 1
+                ;;
+        esac
+    done
+    
+    # Esporta le variabili per renderle disponibili agli altri script
+    export FORCE_REDEPLOY CONTINUE_IF_DEPLOYED SKIP_NAT SKIP_ANSIBLE WORKSPACE AUTO_APPROVE
+}
+
+# Funzione per mostrare l'help
+show_help() {
+    cat << EOF
+Uso: $0 [OPZIONI]
+
+OPZIONI:
+    --force-redeploy        Forza un nuovo deployment anche se esiste già
+    --continue-if-deployed  Continua l'esecuzione anche se il deployment esiste già
+    --skip-nat             Salta la configurazione delle regole NAT
+    --skip-ansible         Salta la configurazione Ansible
+    --workspace NOME       Seleziona un workspace Terraform specifico
+    --auto-approve         Approva automaticamente le modifiche Terraform
+    -h, --help             Mostra questo help
+
+ESEMPI:
+    $0 --auto-approve --continue-if-deployed
+    $0 --force-redeploy --skip-nat
+    $0 --workspace production --auto-approve
+
+EOF
+}
+
+# Funzione per selezionare il workspace Terraform/OpenTofu
+select_workspace() {
+    local workspace_name="$1"
+    
+    # Se non è specificato un workspace, usa il default
+    if [[ -z "$workspace_name" ]]; then
+        print_status "Nessun workspace specificato, uso workspace default"
+        return 0
+    fi
+    
+    # Determina quale comando usare (terraform o tofu)
+    local terraform_cmd
+    if command -v tofu >/dev/null 2>&1; then
+        terraform_cmd="tofu"
+    elif command -v terraform >/dev/null 2>&1; then
+        terraform_cmd="terraform"
+    else
+        print_error "Né terraform né tofu sono installati"
+        return 1
+    fi
+    
+    # Esporta il comando per uso globale
+    export TERRAFORM_COMMAND="$terraform_cmd"
+    
+    print_status "Selezionando workspace: $workspace_name"
+    
+    # Lista i workspace esistenti
+    local existing_workspaces
+    existing_workspaces=$($terraform_cmd workspace list 2>/dev/null)
+    
+    # Controlla se il workspace esiste già
+    if echo "$existing_workspaces" | grep -q "^[* ]*$workspace_name$"; then
+        print_status "Workspace '$workspace_name' trovato, selezionandolo..."
+        if $terraform_cmd workspace select "$workspace_name"; then
+            print_success "✓ Workspace '$workspace_name' selezionato"
+        else
+            print_error "Errore nella selezione del workspace '$workspace_name'"
+            return 1
+        fi
+    else
+        print_status "Workspace '$workspace_name' non esiste, creandolo..."
+        if $terraform_cmd workspace new "$workspace_name"; then
+            print_success "✓ Workspace '$workspace_name' creato e selezionato"
+        else
+            print_error "Errore nella creazione del workspace '$workspace_name'"
+            return 1
+        fi
+    fi
+    
+    # Verifica il workspace corrente
+    local current_workspace
+    current_workspace=$($terraform_cmd workspace show)
+    if [[ "$current_workspace" == "$workspace_name" ]]; then
+        print_success "✓ Workspace attivo: $current_workspace"
+        return 0
+    else
+        print_error "✗ Errore: workspace attivo ($current_workspace) non corrisponde a quello richiesto ($workspace_name)"
+        return 1
+    fi
+}
+
 # Funzione principale di deployment
 main() {
     # Parse argomenti
@@ -71,31 +206,35 @@ main() {
     
     print_status "IP delle VM: $(echo "$vm_ips" | jq -r 'values | join(", ")')"
     
-    # Configura port forwarding per tutte le VM se richiesto
     local vm_ssh_ports_str=""
     local vm_k3s_ports_str=""
+    
+
+    
+    # Configura le regole NAT usando Ansible
     if [[ "$SKIP_NAT" != "true" ]]; then
         if [[ -z "$PROXMOX_HOST" ]]; then
-            print_warning "PROXMOX_HOST non è impostato. Saltando la configurazione del port forwarding."
+            print_warning "PROXMOX_HOST non è impostato. Saltando la configurazione delle regole NAT."
         else
-            print_status "Configurazione del port forwarding per SSH (porta 22) per le VM..."
-            if ! SSH_PORTS_RAW_OUTPUT=$(setup_multiple_port_forwarding "$vm_ips" "$(basename "$(pwd)")" "$PROXMOX_HOST" "22" 2>&1); then
-                print_error "Errore durante la configurazione del port forwarding SSH:"
-                echo "$SSH_PORTS_RAW_OUTPUT" | while read -r line; do print_error "  $line"; done
+            print_status "Configurazione delle regole NAT per SSH e K3s API tramite Ansible..."
+            NAT_INVENTORY_FILE="inventory-nat-rules.ini"
+            TERRAFORM_OUTPUT_JSON=$($TERRAFORM_COMMAND output -json)
+            generate_nat_rules_inventory "$NAT_INVENTORY_FILE" "$TERRAFORM_OUTPUT_JSON"
+            ANSIBLE_OUTPUT=$(ansible-playbook -i "$NAT_INVENTORY_FILE" add_ssh_nat_rules2.yml)
+            echo "$ANSIBLE_OUTPUT" # Print the full output for debugging
+
+            # Estrai le porte SSH e K3s dall'output di Ansible in modo robusto
+            vm_ssh_ports_str=$(echo "$ANSIBLE_OUTPUT" | awk -F 'SSH_PORT_MAPPING: ' '/SSH_PORT_MAPPING:/ {print $2}' | tr -d '\r')
+            vm_k3s_ports_str=$(echo "$ANSIBLE_OUTPUT" | awk -F 'K3S_PORT_MAPPING: ' '/K3S_PORT_MAPPING:/ {print $2}' | tr -d '\r')
+
+            if [[ -z "$vm_ssh_ports_str" ]] || [[ -z "$vm_k3s_ports_str" ]]; then
+                print_error "Impossibile estrarre le mappature delle porte dall'output di Ansible."
                 exit 1
             fi
-            vm_ssh_ports_str=$(echo "$SSH_PORTS_RAW_OUTPUT" | grep -E '^[a-zA-Z0-9_-]+:[0-9]+$')
 
-            print_status "Port forwarding SSH configurato: $vm_ssh_ports_str"
-
-            print_status "Configurazione del port forwarding per K3s API (porta $K3S_API_PORT) per le VM..."
-            if ! K3S_API_PORTS_RAW_OUTPUT=$(setup_multiple_port_forwarding "$vm_ips" "$(basename "$(pwd)")" "$PROXMOX_HOST" "$K3S_API_PORT" 2>&1); then
-                print_error "Errore durante la configurazione del port forwarding K3s API:"
-                echo "$K3S_API_PORTS_RAW_OUTPUT" | while read -r line; do print_error "  $line"; done
-                exit 1
-            fi
-            vm_k3s_ports_str=$(echo "$K3S_API_PORTS_RAW_OUTPUT" | grep -E '^[a-zA-Z0-9_-]+:[0-9]+$')
-            print_status "Port forwarding K3s API configurato: $vm_k3s_ports_str"
+            print_success "Regole NAT configurate con successo"
+            print_status "Porte SSH esterne: $vm_ssh_ports_str"
+            print_status "Porte K3s API esterne: $vm_k3s_ports_str"
         fi
     fi
     
@@ -103,24 +242,23 @@ main() {
     local failed_vms=()
     local successful_vms=()
     
+    # Fix: Use process substitution instead of pipe to avoid subshell
     echo "$vm_ips" | jq -r 'to_entries[] | .key + " " + .value' | while read -r vm_name vm_ip; do
-        print_status "Verificando connettività SSH per VM $vm_name \($vm_ip\)..."
+        print_status "Verificando connettività SSH per VM $vm_name ($vm_ip)..."
         
-        local ssh_port=22
-        if [[ -n "$vm_ssh_ports_str" ]]; then
-        local port_line
-        port_line=$(echo "$vm_ssh_ports_str" | grep "^${vm_name}:")
-        if [[ -n "$port_line" ]]; then
-            ssh_port=$(echo "$port_line" | cut -d':' -f2)
+        local ssh_port
+        if ! ssh_port=$(get_port_for_vm "$vm_name" "$vm_ssh_ports_str"); then
+            print_warning "Nessuna porta SSH trovata per $vm_name, impossibile verificare la connettività."
+            failed_vms+=("$vm_name:$vm_ip")
+            continue
         fi
-    fi
         
         if wait_for_ssh "$vm_ip" "$vm_name" "$ssh_port"; then
             successful_vms+=("$vm_name:$vm_ip")
-            print_status "✓ SSH OK per $vm_name \($vm_ip\) sulla porta $ssh_port"
+            print_status "✓ SSH OK per $vm_name ($vm_ip) sulla porta $ssh_port"
         else
             failed_vms+=("$vm_name:$vm_ip")
-            print_warning "✗ SSH fallito per $vm_name \($vm_ip\) sulla porta $ssh_port"
+            print_warning "✗ SSH fallito per $vm_name ($vm_ip) sulla porta $ssh_port"
         fi
     done
     
@@ -128,7 +266,9 @@ main() {
     if [[ ${#failed_vms[@]} -gt 0 ]]; then
         print_error "Connessione SSH fallita per ${#failed_vms[@]} VM\(s\):"
         for vm_info in "${failed_vms[@]}"; do
-            print_error "  - ${vm_info/:/ \(}\)"
+            local vm_name_part=$(echo "$vm_info" | cut -d':' -f1)
+            local vm_ip_part=$(echo "$vm_info" | cut -d':' -f2)
+            print_error "  - ${vm_name_part} (${vm_ip_part})"
         done
         print_error "Verifica:"
         print_error "  1. Le VM sono effettivamente in esecuzione"
@@ -149,7 +289,7 @@ main() {
         fi
     fi
     
-    print_status "test test"
+
     if [[ "${SKIP_ANSIBLE:-false}" != "true" ]]; then
         print_status "Avvio configurazione Ansible per ${#vm_ips[@]} VM..."
         

@@ -8,11 +8,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 check_prerequisites() {
     print_header "VERIFICA PREREQUISITI"
     
-    # Verifica Terraform/OpenTofu
-    if ! command -v terraform &> /dev/null && ! command -v tofu &> /dev/null; then
-        print_error "Né Terraform né OpenTofu sono installati. Installa uno dei due."
-        exit 1
+    if command -v tofu &> /dev/null; then
+        export TERRAFORM_COMMAND="tofu"
+    else
+        export TERRAFORM_COMMAND="terraform"
     fi
+    print_status "✓ Usando $TERRAFORM_COMMAND"
     
     # Verifica Ansible
     if ! command -v ansible &> /dev/null; then
