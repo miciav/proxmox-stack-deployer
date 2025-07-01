@@ -1,0 +1,14 @@
+[proxmox_hosts]
+{{ groups['proxmox_hosts'] | map('extract', hostvars) | map(attribute='inventory_hostname') | join('\n') }}
+
+[proxmox_hosts:vars]
+interfaces_file=/etc/network/interfaces
+target_interface=vmbr1
+source_interface=vmbr0
+ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+ansible_python_interpreter=/usr/bin/python3
+
+[port_mappings]
+{% for vm_service in groups['port_mappings'] | sort %}
+{{ vm_service }} vm_id={{ hostvars[vm_service]['vm_id'] }} vm_name={{ hostvars[vm_service]['vm_name'] }} vm_ip={{ hostvars[vm_service]['vm_ip'] }} vm_port={{ hostvars[vm_service]['vm_port'] }} service={{ hostvars[vm_service]['service'] }} vm_user={{ hostvars[vm_service]['vm_user'] | default('') }} host_port={{ vm_port_mappings[vm_service] }}
+{% endfor %}

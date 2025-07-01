@@ -5,6 +5,7 @@
   vars:
     port_range_start: 145
     port_range_end: 15000
+    inventory_file: "{{ inventory_dir }}/inventory-updates.ini"
 
   tasks:
     - name: Ensure interfaces file exists
@@ -175,3 +176,12 @@
           ssh -i {{ ansible_ssh_private_key_file }} -p {{ vm_port_mappings[vm_service] }} {{ hostvars[vm_service]['vm_user'] }}@{{ ansible_host }}  # {{ hostvars[vm_service]['vm_name'] }}
           {% endif %}
           {% endfor %}
+
+
+    - name: Generate SSH connections inventory file
+      ansible.builtin.template:
+        src: ../templates/ssh_inventory.ini.j2
+        dest: "{{ inventory_dir }}/inventory_updates.ini"
+      delegate_to: localhost
+      run_once: true
+      become: false

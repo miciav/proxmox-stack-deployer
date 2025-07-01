@@ -150,6 +150,8 @@ select_workspace() {
     fi
 }
 
+
+
 # Funzione principale di deployment
 main() {
     # Parse argomenti
@@ -205,109 +207,42 @@ main() {
     fi
     
     print_status "IP delle VM: $(echo "$vm_ips" | jq -r 'values | join(", ")')"
-    
-    local vm_ssh_ports_str=""
-    local vm_k3s_ports_str=""
-    
+ 
+ 
 
     
     # Configura le regole NAT usando Ansible
     if [[ "$SKIP_NAT" != "true" ]]; then
-        if [[ -z "$PROXMOX_HOST" ]]; then
-            print_warning "PROXMOX_HOST non è impostato. Saltando la configurazione delle regole NAT."
-        else
+        if [[ "${SKIP_ANSIBLE:-false}" != "true" ]]; then    
             print_status "Configurazione delle regole NAT per SSH e K3s API tramite Ansible..."
-            NAT_INVENTORY_FILE="inventory-nat-rules.ini"
+            NAT_INVENTORY_FILE="./inventories/inventory-nat-rules.ini"
+            NAT_PLAYBOOK_FILE="./playbooks/add_nat_rules.yml"
             TERRAFORM_OUTPUT_JSON=$($TERRAFORM_COMMAND output -json)
             generate_nat_rules_inventory "$NAT_INVENTORY_FILE" "$TERRAFORM_OUTPUT_JSON"
-            ANSIBLE_OUTPUT=$(ansible-playbook -i "$NAT_INVENTORY_FILE" add_ssh_nat_rules2.yml)
+            ansible-playbook -i "$NAT_INVENTORY_FILE" "$NAT_PLAYBOOK_FILE"
             echo "$ANSIBLE_OUTPUT" # Print the full output for debugging
-
-            # Estrai le porte SSH e K3s dall'output di Ansible in modo robusto
-            vm_ssh_ports_str=$(echo "$ANSIBLE_OUTPUT" | awk -F 'SSH_PORT_MAPPING: ' '/SSH_PORT_MAPPING:/ {print $2}' | tr -d '\r')
-            vm_k3s_ports_str=$(echo "$ANSIBLE_OUTPUT" | awk -F 'K3S_PORT_MAPPING: ' '/K3S_PORT_MAPPING:/ {print $2}' | tr -d '\r')
-
-            if [[ -z "$vm_ssh_ports_str" ]] || [[ -z "$vm_k3s_ports_str" ]]; then
-                print_error "Impossibile estrarre le mappature delle porte dall'output di Ansible."
-                exit 1
-            fi
-
             print_success "Regole NAT configurate con successo"
-            print_status "Porte SSH esterne: $vm_ssh_ports_str"
-            print_status "Porte K3s API esterne: $vm_k3s_ports_str"
-        fi
-    fi
-    
-    # Verifica connettività SSH per tutte le VM
-    local failed_vms=()
-    local successful_vms=()
-    
-    # Fix: Use process substitution instead of pipe to avoid subshell
-    echo "$vm_ips" | jq -r 'to_entries[] | .key + " " + .value' | while read -r vm_name vm_ip; do
-        print_status "Verificando connettività SSH per VM $vm_name ($vm_ip)..."
-        
-        local ssh_port
-        if ! ssh_port=$(get_port_for_vm "$vm_name" "$vm_ssh_ports_str"); then
-            print_warning "Nessuna porta SSH trovata per $vm_name, impossibile verificare la connettività."
-            failed_vms+=("$vm_name:$vm_ip")
-            continue
-        fi
-        
-        if wait_for_ssh "$vm_ip" "$vm_name" "$ssh_port"; then
-            successful_vms+=("$vm_name:$vm_ip")
-            print_status "✓ SSH OK per $vm_name ($vm_ip) sulla porta $ssh_port"
-        else
-            failed_vms+=("$vm_name:$vm_ip")
-            print_warning "✗ SSH fallito per $vm_name ($vm_ip) sulla porta $ssh_port"
-        fi
-    done
-    
-    # Verifica se ci sono VM con problemi SSH
-    if [[ ${#failed_vms[@]} -gt 0 ]]; then
-        print_error "Connessione SSH fallita per ${#failed_vms[@]} VM\(s\):"
-        for vm_info in "${failed_vms[@]}"; do
-            local vm_name_part=$(echo "$vm_info" | cut -d':' -f1)
-            local vm_ip_part=$(echo "$vm_info" | cut -d':' -f2)
-            print_error "  - ${vm_name_part} (${vm_ip_part})"
-        done
-        print_error "Verifica:"
-        print_error "  1. Le VM sono effettivamente in esecuzione"
-        print_error "  2. Il security group permette SSH \(porta 22\)"
-        print_error "  3. La chiave SSH è configurata correttamente"
-        print_error "  4. L'username in terraform.tfvars (ci_user) è corretto"
-        if [[ "$SKIP_NAT" != "true" ]]; then
-            print_error "  5. Le regole iptables per il port forwarding sul Proxmox"
-            print_error "  6. La connettività tra client e server Proxmox"
-        fi
-        
-        # Non uscire completamente, procedi con le VM funzionanti
-        if [[ ${#successful_vms[@]} -eq 0 ]]; then
-            print_error "Nessuna VM raggiungibile via SSH"
-            exit 1
-        else
-            print_warning "Procedendo con le ${#successful_vms[@]} VM raggiungibili"
         fi
     fi
     
 
     if [[ "${SKIP_ANSIBLE:-false}" != "true" ]]; then
         print_status "Avvio configurazione Ansible per ${#vm_ips[@]} VM..."
-        
-        if ! run_ansible_configuration_multiple "$vm_ips" "$vm_ssh_ports_str" "$vm_k3s_ports_str"; then
+        UPDATE_INVENTORY_FILE="./inventories/inventory_updates.ini"
+        UPDATE_PLAYBOOK_FILE="./playbooks/configure-vms.yml"
+        if ! ansible-playbook -i "$UPDATE_INVENTORY_FILE" "$UPDATE_PLAYBOOK_FILE"; then
             print_error "Configurazione Ansible fallita per alcune VM"
-            print_info "Infrastruttura creata con successo, solo la configurazione necessita intervento manuale"
-            print_info "  cd $(dirname $INVENTORY_FILE)"
-            print_info "  ansible-playbook -i $INVENTORY_FILE $PLAYBOOK_FILE -v"
             
             # Opzionale: esportare le variabili per uso successivo
-            export FAILED_ANSIBLE_INVENTORY="$INVENTORY_FILE"
+            export FAILED_ANSIBLE_INVENTORY="$UPDATE_INVENTORY_FILE"
             export FAILED_ANSIBLE_PLAYBOOK="$PLAYBOOK_FILE"
         else
             print_success "Configurazione Ansible completata con successo"
             
             # Esegui il playbook K3s
             print_status "Esecuzione playbook K3s..."
-            if ! ansible-playbook -i "$INVENTORY_FILE" "k3s_install.yml" --extra-vars "proxmox_host=$PROXMOX_HOST"; then
+            K3S_PLAYBOOK_FILE="./playbooks/k3s_install.yml"
+            if ! ansible-playbook -i "$UPDATE_INVENTORY_FILE" "$K3S_PLAYBOOK_FILE"; then
                 print_error "Errore nell'esecuzione del playbook K3s"
                 return 1
             fi
@@ -315,11 +250,7 @@ main() {
         fi
     else
         print_status "Configurazione Ansible saltata (SKIP_ANSIBLE=true)"
-        print_info "Le VM sono state create ma non configurate"
     fi
-    
-    # Mostra informazioni finali per tutte le VM
-    show_final_info_multiple "$vm_summary" "$vm_ssh_ports_str"
     
     print_status "Deployment completato alle $(date)"
 }

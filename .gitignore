@@ -13,7 +13,7 @@ logs/
 *.log
 
 # Ansible
-inventory.ini
+**/*.ini
 ./ansible
 
 # IDEs

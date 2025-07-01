@@ -85,33 +85,7 @@ run_ansible_playbook() {
     fi
 }
 
-# Funzione per eseguire Ansible (funzione principale)
-run_ansible_configuration() {
-    local vm_ip="$1"
-    
-    if [[ "$SKIP_ANSIBLE" == "true" ]]; then
-        print_warning "Configurazione Ansible saltata (playbook non trovato)"
-        return 0
-    fi
-    
-    print_header "CONFIGURAZIONE CON ANSIBLE"
-    
-    # Genera inventory per singola VM
-    echo "vm1:$vm_ip:22" | generate_ansible_inventory
-    
-    # Test connettività Ansible
-    if ! test_ansible_connectivity; then
-        return 1
-    fi
-    
-    # Esegui playbook
-    if ! run_ansible_playbook "$PLAYBOOK_FILE"; then
-        print_error "Configurazione Ansible fallita"
-        return 1
-    fi
-    
-  return 0
-}
+
 
 # Funzione per eseguire configurazione Ansible su multiple VM
 run_ansible_configuration_multiple() {

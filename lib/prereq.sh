@@ -35,8 +35,20 @@ check_prerequisites() {
     fi
     
     # Verifica playbook Ansible
-    if [[ ! -f "$PLAYBOOK_FILE" ]]; then
-        print_warning "Playbook Ansible '$PLAYBOOK_FILE' non trovato"
+    if [[ ! -f "$PLAYBOOK_FILE1" ]]; then
+        print_warning "Playbook Ansible '$PLAYBOOK_FILE1' non trovato"
+        print_status "Lo script continuerà senza configurazione Ansible"
+        SKIP_ANSIBLE=true
+    fi
+        # Verifica playbook Ansible
+    if [[ ! -f "$PLAYBOOK_FILE2" ]]; then
+        print_warning "Playbook Ansible '$PLAYBOOK_FILE2' non trovato"
+        print_status "Lo script continuerà senza configurazione Ansible"
+        SKIP_ANSIBLE=true
+    fi
+        # Verifica playbook Ansible
+    if [[ ! -f "$PLAYBOOK_FILE3" ]]; then
+        print_warning "Playbook Ansible '$PLAYBOOK_FILE3' non trovato"
         print_status "Lo script continuerà senza configurazione Ansible"
         SKIP_ANSIBLE=true
     fi

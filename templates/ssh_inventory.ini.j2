@@ -1,0 +1,10 @@
+[vms]
+{% for vm_service in groups['port_mappings'] | sort %}
+{% if hostvars[vm_service]['vm_port'] == 22 %}
+{{ hostvars[vm_service]['vm_name'] }} ansible_host={{ ansible_host }} ansible_port={{ vm_port_mappings[vm_service] }} ansible_user={{ hostvars[vm_service]['vm_user'] }} ansible_ssh_private_key_file={{ hostvars[ansible_host]['ansible_ssh_private_key_file'] }} k3s_api_port_external={{ vm_port_mappings[hostvars[vm_service]['vm_name'] + '_k3s'] }}
+{% endif %}
+{% endfor %}
+
+[vms:vars]
+ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+ansible_python_interpreter=/usr/bin/python3

@@ -19,7 +19,9 @@ NC='\033[0m'
 PLAN_FILE="tfplan"
 LOG_FILE="logs/deployment_$(date +%Y%m%d_%H%M%S).log"
 INVENTORY_FILE="inventory.ini"
-PLAYBOOK_FILE="configure-vm.yml"
+PLAYBOOK_FILE1="playbooks/configure-vms.yml"
+PLAYBOOK_FILE2="playbooks/add_nat_rules.yml"
+PLAYBOOK_FILE3="playbooks/k3s_install.yml"
 SSH_KEY_PATH="$HOME/.ssh/id_rsa"
 SSH_TIMEOUT=10
 MAX_SSH_ATTEMPTS=12
@@ -34,7 +36,7 @@ INTERNAL_INTERFACE="${INTERNAL_INTERFACE:-vmbr1}"
 NAT_START_PORT="${NAT_START_PORT:-20000}"
 K3S_API_PORT="${K3S_API_PORT:-6443}"
 
-export DEBUG=true
+#export DEBUG=true
 
 # Funzioni di output
 print_status() {
