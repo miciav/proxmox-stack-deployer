@@ -7,7 +7,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 # Funzione per il workflow Terraform/OpenTofu
 run_terraform_workflow() {
     print_header "WORKFLOW TERRAFORM/OPENTOFU"
-    
+
+    # Change to terraform directory
+    cd "$TERRAFORM_DIR" || exit
+
     # Usa OpenTofu se disponibile, altrimenti Terraform
     if command -v tofu &> /dev/null; then
         TF_CMD="tofu"
@@ -18,7 +21,7 @@ run_terraform_workflow() {
         TF_VERSION=$(terraform version | head -n1)
         print_status "Usando Terraform: $TF_VERSION"
     fi
-    
+
     # Inizializzazione
     print_status "Inizializzo $TF_CMD..."
     if [[ -d ".terraform" ]]; then
@@ -26,12 +29,12 @@ run_terraform_workflow() {
     else
         $TF_CMD init
     fi
-    
+
     # Validazione
     print_status "Valido la configurazione..."
     $TF_CMD validate
     print_status "✓ Configurazione valida"
-    
+
     # Formattazione
     print_status "Verifico formattazione..."
     if ! $TF_CMD fmt -check -recursive; then
@@ -39,7 +42,7 @@ run_terraform_workflow() {
         $TF_CMD fmt -recursive
     fi
     print_status "✓ Codice formattato correttamente"
-    
+
     # Pianificazione
     if [[ "$SKIP_PLAN" != "true" ]]; then
         print_status "Pianifico il deployment..."
@@ -48,10 +51,12 @@ run_terraform_workflow() {
         case $PLAN_EXIT_CODE in
             0)
                 print_status "✓ Nessuna modifica necessaria"
+                cd ..
                 return 0
                 ;;
             1)
                 print_error "✗ Errore durante la pianificazione"
+                cd ..
                 exit 1
                 ;;
             2)
@@ -66,6 +71,7 @@ run_terraform_workflow() {
 
     # Se non ci sono modifiche da applicare, esci senza applicare
     if [[ "$PLAN_EXIT_CODE" == "0" ]]; then
+        cd ..
         return 0
     fi
 
@@ -76,6 +82,7 @@ run_terraform_workflow() {
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
             print_warning "Deployment annullato dall'utente"
+            cd ..
             exit 0
         fi
     fi
@@ -94,14 +101,16 @@ run_terraform_workflow() {
     fi
 
     print_status "✓ Infrastruttura creata con successo!"
+    cd ..
     return 1  # Indica che sono state applicate modifiche
 }
 
 # Funzione per selezionare workspace
 select_terraform_workspace() {
     local workspace="$1"
-    
+
     if [[ -n "$workspace" ]]; then
+        cd terraform-opentofu || exit
         print_status "Selezionando workspace: $workspace"
         # Determina comando Terraform
         if command -v tofu &> /dev/null; then
@@ -110,6 +119,7 @@ select_terraform_workspace() {
             TF_CMD="terraform"
         fi
         $TF_CMD workspace select "$workspace" || $TF_CMD workspace new "$workspace"
+        cd ..
     fi
 }
 
@@ -121,13 +131,16 @@ get_vm_ips_from_terraform() {
     else
         TF_CMD="terraform"
     fi
-    
+
+    cd "$TERRAFORM_DIR" || exit
     if ! VM_IPS=$($TF_CMD output -json vm_ips 2>/dev/null); then
         print_error "Impossibile ottenere gli IP delle VM dall'output Terraform"
         print_error "Assicurati che ci sia un output chiamato 'vm_ips' nella tua configurazione"
+        cd ..
         return 1
     fi
-    
+    cd ..
+
     echo "$VM_IPS"
 }
 
@@ -139,13 +152,16 @@ get_vm_summary_from_terraform() {
     else
         TF_CMD="terraform"
     fi
-    
+
+    cd "$TERRAFORM_DIR" || exit
     if ! VM_SUMMARY=$($TF_CMD output -json vm_summary 2>/dev/null); then
         print_error "Impossibile ottenere il summary delle VM dall'output Terraform"
         print_error "Assicurati che ci sia un output chiamato 'vm_summary' nella tua configurazione"
+        cd ..
         return 1
     fi
-    
+    cd ..
+
     echo "$VM_SUMMARY"
 }
 
@@ -155,7 +171,18 @@ get_vm_ip_from_terraform() {
     if ! vm_ips=$(get_vm_ips_from_terraform); then
         return 1
     fi
-    
+
     # Estrae il primo IP dalla lista
     echo "$vm_ips" | jq -r 'values[0] // empty'
+}
+
+get_output_in_json(){
+    cd "$TERRAFORM_DIR" || exit
+    if ! TERRAFORM_OUTPUT_JSON=$($TF_CMD output -json 2>/dev/null); then
+      print_error "Impossibile ottenere l'output Terraform"
+      cd ..
+      return 1
+    fi
+    cd ..
+  echo "$TERRAFORM_OUTPUT_JSON"
 }

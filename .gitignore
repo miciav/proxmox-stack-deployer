@@ -7,11 +7,12 @@
 *.tfstate.*
 .terraform.lock.hcl
 .terraform.tfstate.lock.info
-
+**/*.tfvars
+*.tfvars
 # Logs
-logs/
-*.log
+**/*.log
 
+./inventories/*
 # Ansible
 **/*.ini
 ./ansible
