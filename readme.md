@@ -1,52 +1,52 @@
 # 🚀 Proxmox VM Deployment Automation with OpenTofu and Ansible
 
-Questo progetto fornisce una soluzione completa per l'automazione del deployment e della configurazione di macchine virtuali su un cluster Proxmox VE, utilizzando OpenTofu (un fork open-source di Terraform) per la gestione dell'infrastruttura e Ansible per la configurazione post-deployment e la gestione delle regole NAT.
+This project provides a comprehensive solution for automating the deployment and configuration of virtual machines on a Proxmox VE cluster, using OpenTofu (an open-source fork of Terraform) for infrastructure management and Ansible for post-deployment configuration and NAT rule management.
 
-## ✨ Caratteristiche Principali
+## ✨ Key Features
 
-- **Deployment Multi-VM Scalabile**: Crea e configura un numero arbitrario di VM in modo efficiente.
-- **Creazione Staggered**: Le VM vengono create in parallelo ma con un ritardo configurabile per ottimizzare l'uso delle risorse del Proxmox host.
-- **Inizializzazione Sequenziale**: Gli script di attesa e configurazione delle VM vengono eseguiti in sequenza per garantire stabilità e prevedibilità.
-- **Configurazione Automatica NAT**: Configura dinamicamente le regole NAT (per SSH e K3s API) sul Proxmox host.
-- **Provisioning K3s**: Include l'installazione automatica di K3s (Kubernetes leggero) sulle VM.
-- **Gestione Chiavi SSH**: Setup e gestione delle chiavi SSH per l'accesso sicuro alle VM.
-- **Output Dettagliato**: Genera file di inventory e riepiloghi di connessione per facilitare l'accesso e la gestione delle VM.
-- **Supporto Workspace OpenTofu**: Permette di gestire diversi ambienti di deployment (es. `dev`, `prod`).
+- **Scalable Multi-VM Deployment**: Efficiently create and configure an arbitrary number of VMs.
+- **Staggered Creation**: VMs are created in parallel but with a configurable delay to optimize Proxmox host resource usage.
+- **Sequential Initialization**: VM waiting and configuration scripts are executed sequentially to ensure stability and predictability.
+- **Automatic NAT Configuration**: Dynamically configures NAT rules (for SSH and K3s API) on the Proxmox host.
+- **K3s Provisioning**: Includes automatic installation of K3s (lightweight Kubernetes) on the VMs.
+- **SSH Key Management**: Setup and management of SSH keys for secure access to VMs.
+- **Detailed Output**: Generates inventory files and connection summaries to facilitate VM access and management.
+- **OpenTofu Workspace Support**: Allows managing different deployment environments (e.g., `dev`, `prod`).
 
-## 🛠️ Tecnologie Utilizzate
+## 🛠️ Technologies Used
 
-- **[OpenTofu](https://opentofu.org/)**: Per il provisioning dell'infrastruttura (VM su Proxmox).
-- **[Ansible](https://www.ansible.com/)**: Per la configurazione delle VM, l'installazione di K3s e la gestione delle regole NAT sul Proxmox host.
-- **[Proxmox VE](https://www.proxmox.com/en/)**: La piattaforma di virtualizzazione.
-- **Bash Scripting**: Orchestrazione dell'intero processo di deployment tramite `deploy_main.sh`.
-- **`jq`**: Per il parsing e la manipolazione dell'output JSON di OpenTofu.
+- **[OpenTofu](https://opentofu.org/)**: For infrastructure provisioning (VMs on Proxmox).
+- **[Ansible](https://www.ansible.com/)**: For VM configuration, K3s installation, and NAT rule management on the Proxmox host.
+- **[Proxmox VE](https://www.proxmox.com/en/)**: The virtualization platform.
+- **Bash Scripting**: Orchestration of the entire deployment process via `deploy_main.sh`.
+- **`jq`**: For parsing and manipulating OpenTofu's JSON output.
 
-## 🚀 Flusso di Deployment
+## 🚀 Deployment Flow
 
-Il processo di deployment è orchestrato dallo script `deploy_main.sh` e segue le seguenti fasi:
+ The deployment process is orchestrated by the `deploy_main.sh` script and follows these phases:
 
-1.  **Parsing Argomenti**: Analizza gli argomenti passati allo script (es. `--force-redeploy`, `--skip-nat`).
-2.  **Verifica Prerequisiti**: Controlla la presenza degli strumenti necessari (OpenTofu, Ansible, `jq`).
-3.  **Validazione `terraform.tfvars`**: Assicura che il file di configurazione delle variabili sia corretto.
-4.  **Setup Chiavi SSH**: Configura le chiavi SSH per l'accesso al Proxmox host e alle VM.
-5.  **Selezione Workspace OpenTofu**: Seleziona o crea un workspace OpenTofu per isolare gli stati di deployment.
-6.  **Workflow OpenTofu**: Esegue `tofu init`, `tofu plan`, `tofu apply` per creare le VM su Proxmox.
-    - Le VM vengono create in modo scaglionato (`deployment_delay`).
-    - Per ogni VM, viene eseguito lo script `wait_for_vm.sh` che attende l'assegnazione dell'IP, verifica il guest agent e lo stato del sistema.
-7.  **Configurazione Regole NAT (Ansible)**:
-    - Genera un file di inventory (`inventories/inventory-nat-rules.ini`) basato sull'output di OpenTofu.
-    - Esegue il playbook Ansible `add_ssh_nat_rules2.yml` per configurare le regole NAT (SSH e K3s API) sul Proxmox host.
-    - Genera un file di inventory specifico per le connessioni SSH (`ssh_connections.ini`).
-8.  **Configurazione VM (Ansible)**:
-    - Esegue il playbook Ansible `configure-vm.yml` per la configurazione iniziale delle VM.
-    - Esegue il playbook Ansible `k3s_install.yml` per installare K3s sulle VM.
-9.  **Visualizzazione Informazioni Finali**: Mostra un riepilogo dettagliato delle VM create, delle mappature NAT e dei comandi di connessione SSH.
+1.  **Argument Parsing**: Analyzes arguments passed to the script (e.g., `--force-redeploy`, `--skip-nat`).
+2.  **Prerequisite Check**: Verifies the presence of necessary tools (OpenTofu, Ansible, `jq`).
+3.  **`terraform.tfvars` Validation**: Ensures the variable configuration file is correct.
+4.  **SSH Key Setup**: Configures SSH keys for access to the Proxmox host and VMs.
+5.  **OpenTofu Workspace Selection**: Selects or creates an OpenTofu workspace to isolate deployment states.
+6.  **OpenTofu Workflow**: Executes `tofu init`, `tofu plan`, `tofu apply` to create VMs on Proxmox.
+    - VMs are created in a staggered manner (`deployment_delay`).
+    - For each VM, the `wait_for_vm.sh` script is executed, which waits for IP assignment, verifies the guest agent, and system status.
+7.  **NAT Rules Configuration (Ansible)**:
+    - Generates an Ansible inventory file (`inventories/inventory-nat-rules.ini`) based on OpenTofu's output.
+    - Executes the Ansible playbook `add_ssh_nat_rules2.yml` to configure NAT rules (SSH and K3s API) on the Proxmox host.
+    - Generates a specific inventory file for SSH connections (`ssh_connections.ini`).
+8.  **VM Configuration (Ansible)**:
+    - Executes the Ansible playbook `configure-vm.yml` for initial VM configuration.
+    - Executes the Ansible playbook `k3s_install.yml` to install K3s on the VMs.
+9.  **Display Final Information**: Shows a detailed summary of created VMs, NAT mappings, and SSH connection commands.
 
-Per una descrizione più dettagliata del flusso di creazione delle VM e del deployment, consultare:
+For a more detailed description of the VM creation and deployment flow, refer to:
 - **[Deployment Flow Documentation](DEPLOYMENT_FLOW.md)**
 - **[VM Creation Flow Diagram](terraform-opentofu/vm_creation_flow.md)**
 
-## 📂 Struttura del Progetto
+## 📂 Project Structure
 
 ```
 .gitignore
@@ -74,39 +74,39 @@ lib/
 └── utils.sh
 
 inventories/
-├── inventory-nat-rules.ini  # Generato dinamicamente
-└── ssh_connections.ini      # Generato dinamicamente
+├── inventory-nat-rules.ini  # Dynamically generated
+└── ssh_connections.ini      # Dynamically generated
 
 templates/
 ├── inventory-nat-rules.ini.j2
 └── ssh_inventory.ini.j2
 
-# Altri file generati/ignorati:
+# Other generated/ignored files:
 .terraform/
 *.tfstate*
 logs/
 ```
 
-## ⚙️ Configurazione
+## ⚙️ Configuration
 
-Le variabili di configurazione principali sono definite in `variables.tf` e possono essere sovrascritte in `terraform.tfvars`.
+Main configuration variables are defined in `variables.tf` and can be overridden in `terraform.tfvars`.
 
 ### `variables.tf`
 
-Questo file definisce tutte le variabili che possono essere utilizzate nel progetto OpenTofu, inclusi i loro tipi, descrizioni e valori di default. È la fonte della verità per le configurazioni disponibili.
+This file defines all variables that can be used in the OpenTofu project, including their types, descriptions, and default values. It is the single source of truth for available configurations.
 
 ### `terraform.tfvars`
 
-Questo file è il luogo dove si specificano i valori effettivi per le variabili definite in `variables.tf`. **Non dovrebbe essere committato nel controllo versione** (è già ignorato dal `.gitignore`) in quanto contiene configurazioni specifiche dell'ambiente o credenziali sensibili.
+This file is where you specify the actual values for the variables defined in `variables.tf`. **It should not be committed to version control** (it's already ignored by `.gitignore`) as it contains environment-specific configurations or sensitive credentials.
 
-Esempi di variabili chiave che puoi configurare:
+Examples of key variables you can configure:
 
--   `vm_count`: Numero di VM da creare. (es. `vm_count = 3`)
--   `deployment_delay`: Ritardo in secondi tra la creazione di VM consecutive per evitare sovraccarichi sul Proxmox host. (es. `deployment_delay = 30`)
--   `vm_name_prefix`: Prefisso utilizzato per nominare le VM. (es. `vm_name_prefix = "ubuntu-opentofu"`)
--   `vm_configs`: Una mappa complessa per personalizzare le risorse (CPU, RAM, disco) di singole VM. Utile per creare VM con specifiche diverse all'interno dello stesso deployment.
+-   `vm_count`: Number of VMs to create. (e.g., `vm_count = 3`)
+-   `deployment_delay`: Delay in seconds between consecutive VM creations to avoid overloading the Proxmox host. (e.g., `deployment_delay = 30`)
+-   `vm_name_prefix`: Prefix used to name the VMs. (e.g., `vm_name_prefix = "ubuntu-opentofu"`)
+-   `vm_configs`: A complex map to customize resources (CPU, RAM, disk) of individual VMs. Useful for creating VMs with different specifications within the same deployment.
 
-Esempio `terraform.tfvars`:
+Example `terraform.tfvars`:
 
 ```hcl
 vm_count = 2
@@ -127,118 +127,133 @@ vm_configs = {
 }
 ```
 
-## 🚀 Utilizzo
+## 🚀 Usage
 
-### Prerequisiti
+### Prerequisites
 
-Prima di eseguire il deployment, assicurati di avere i seguenti strumenti installati e configurati correttamente:
+Before running the deployment, ensure you have the following tools installed and configured correctly:
 
--   **Proxmox VE server**: Un server Proxmox VE funzionante con l'API abilitata. Assicurati di avere un utente Proxmox con permessi API sufficienti per creare e gestire VM e configurare le regole di rete.
--   **OpenTofu**: Installato e configurato sul tuo sistema locale. Puoi trovare la guida all'installazione ufficiale [qui](https://opentofu.org/docs/cli/install/).
-    -   Verifica l'installazione: `tofu --version`
--   **Ansible**: Installato sul tuo sistema locale. Puoi installarlo tramite pip: `pip install ansible`.
-    -   Verifica l'installazione: `ansible --version`
--   **`jq`**: Un parser JSON da riga di comando, utilizzato per elaborare l'output di OpenTofu. Installalo tramite il tuo gestore di pacchetti (es. `brew install jq` su macOS, `sudo apt-get install jq` su Debian/Ubuntu).
-    -   Verifica l'installazione: `jq --version`
--   **Chiave SSH**: Una chiave SSH privata (`id_rsa` o simile) configurata per l'accesso al Proxmox host e, successivamente, alle VM create. Il percorso della chiave deve essere specificato nel file di inventory principale.
+-   **Proxmox VE server**: A functional Proxmox VE server with API enabled. Ensure you have a Proxmox user with sufficient API permissions to create and manage VMs and configure network rules.
+-   **OpenTofu**: Installed and configured on your local system. You can find the official installation guide [here](https://opentofu.org/docs/cli/install/).
+    -   Verify installation: `tofu --version`
+-   **Ansible**: Installed on your local system. You can install it via pip: `pip install ansible`.
+    -   Verify installation: `ansible --version`
+-   **`jq`**: A command-line JSON parser, used to process OpenTofu's output. Install it via your preferred package manager (e.g., `brew install jq` on macOS, `sudo apt-get install jq` on Debian/Ubuntu).
+    -   Verify installation: `jq --version`
+-   **SSH Key**: A private SSH key (`id_rsa` or similar) configured for access to the Proxmox host and, subsequently, to the created VMs. The key path must be specified in the main inventory file.
 
-### Esecuzione del Deployment
+### Running the Deployment
 
-Per avviare il processo di deployment, esegui lo script principale dalla directory radice del progetto:
+To start the deployment process, run the main script from the project root directory:
 
 ```bash
-./deploy_main.sh [OPZIONI]
+./deploy.sh [OPTIONS]
 ```
 
-**Opzioni della Riga di Comando:**
+**Command Line Options:**
 
--   `--force-redeploy`: Forza un nuovo deployment anche se un `terraform.tfstate` esistente indica che le risorse sono già state create. Utile per ricreare l'ambiente da zero.
--   `--continue-if-deployed`: Permette allo script di continuare l'esecuzione anche se il deployment sembra essere già stato eseguito. Utile per riprendere un'esecuzione interrotta o per applicare solo le fasi di configurazione.
--   `--skip-nat`: Salta la fase di configurazione delle regole NAT sul Proxmox host. Le VM verranno create ma non saranno accessibili tramite port forwarding.
--   `--skip-ansible`: Salta tutte le fasi di configurazione Ansible. Le VM verranno create e inizializzate, ma non verrà eseguita alcuna configurazione post-deployment (es. installazione K3s).
--   `--workspace NOME`: Specifica un nome per il workspace OpenTofu. Questo permette di isolare gli stati di deployment per diversi ambienti (es. `dev`, `staging`, `production`). Se il workspace non esiste, verrà creato.
--   `--auto-approve`: Approva automaticamente le modifiche proposte da OpenTofu (`tofu apply -auto-approve`), evitando la richiesta di conferma manuale.
--   `-h`, `--help`: Mostra un messaggio di aiuto con tutte le opzioni disponibili e gli esempi di utilizzo.
+-   `--force-redeploy`: Forces a new deployment even if an existing `terraform.tfstate` indicates that resources have already been created. Useful for recreating the environment from scratch.
+-   `--continue-if-deployed`: Allows the script to continue execution even if the deployment appears to have already run. Useful for resuming an interrupted execution or applying only the configuration phases.
+-   `--skip-nat`: Skips the NAT rule configuration phase on the Proxmox host. VMs will be created but will not be accessible via port forwarding.
+-   `--skip-ansible`: Skips all Ansible configuration phases. VMs will be created and initialized, but no post-deployment configuration (e.g., K3s installation) will be performed.
+-   `--workspace NAME`: Specifies a name for the OpenTofu workspace. This allows isolating deployment states for different environments (e.g., `dev`, `staging`, `production`). If the workspace does not exist, it will be created.
+-   `--auto-approve`: Automatically approves changes proposed by OpenTofu (`tofu apply -auto-approve`), avoiding manual confirmation prompts.
+-   `--no-vm-update`: Skips the VM configuration playbook (`configure-vms.yml`).
+-   `--no-k3s`: Skips the K3s installation playbook (`k3s_install.yml`).
+-   `--destroy`: Destroys the infrastructure created by OpenTofu. If used with `--auto-approve`, it will not prompt for confirmation.
+-   `-h`, `--help`: Shows a help message with all available options and usage examples.
 
-**Esempi di Utilizzo:**
+**Usage Examples:**
 
 ```bash
-# Esegue un deployment completo, approvando automaticamente le modifiche e continuando se già deployato
-./deploy_main.sh --auto-approve --continue-if-deployed
+# Performs a full deployment, automatically approving changes and continuing if already deployed
+./deploy.sh --auto-approve --continue-if-deployed
 
-# Forza un nuovo deployment da zero, saltando la configurazione NAT
-./deploy_main.sh --force-redeploy --skip-nat
+# Forces a new deployment from scratch, skipping NAT configuration
+./deploy.sh --force-redeploy --skip-nat
 
-# Esegue il deployment in un workspace specifico chiamato 'production', con approvazione automatica
-./deploy_main.sh --workspace production --auto-approve
+# Deploys to a specific workspace named 'production', with automatic approval
+./deploy.sh --workspace production --auto-approve
+
+# Deploys VMs but skips the VM configuration playbook
+./deploy.sh --no-vm-update
+
+# Deploys VMs but skips the K3s installation playbook
+./deploy.sh --no-k3s
+
+# Destroys the infrastructure, requiring manual confirmation
+./deploy.sh --destroy
+
+# Destroys the infrastructure without prompting for confirmation
+./deploy.sh --destroy --auto-approve
 ```
 
-### Output Generati
+### Generated Outputs
 
-Durante e dopo il deployment, il progetto genera diversi file utili per la gestione e il debug:
+During and after deployment, the project generates several useful files for management and debugging:
 
--   `inventories/inventory-nat-rules.ini`: Un file di inventory Ansible che viene aggiornato dinamicamente con le mappature delle porte NAT assegnate alle VM. Contiene dettagli come `vm_id`, `vm_name`, `vm_ip`, `vm_port`, `service` e `host_port`.
--   `ssh_connections.ini`: Un file di inventory Ansible dedicato specificamente alle connessioni SSH alle VM. Include le porte NATtate per SSH, il nome utente, l'host e il percorso della chiave SSH privata, oltre alla porta esterna per l'API K3s (se applicabile).
--   `/tmp/vm_<VMID>_ip.txt`: Per ogni VM creata, questo file temporaneo contiene l'indirizzo IP privato scoperto dopo l'avvio.
--   `/tmp/vm_<VMID>_summary.txt`: Contiene un riepilogo del deployment e informazioni di debug dettagliate per ogni VM, generate dallo script `wait_for_vm.sh`.
+-   `inventories/inventory-nat-rules.ini`: An Ansible inventory file that is dynamically updated with NAT port mappings assigned to VMs. Contains details such as `vm_id`, `vm_name`, `vm_ip`, `vm_port`, `service`, and `host_port`.
+-   `ssh_connections.ini`: An Ansible inventory file specifically dedicated to SSH connections to VMs. Includes NATted ports for SSH, username, host, and the path to the private SSH key, as well as the external port for the K3s API (if applicable).
+-   `/tmp/vm_<VMID>_ip.txt`: For each VM created, this temporary file contains the private IP address discovered after startup.
+-   `/tmp/vm_<VMID>_summary.txt`: Contains a deployment summary and detailed debug information for each VM, generated by the `wait_for_vm.sh` script.
 
-## 🔗 Connessione alle VM
+## 🔗 Connecting to VMs
 
-Dopo un deployment riuscito, la sezione finale dell'output di `deploy_main.sh` fornirà un riepilogo dettagliato delle VM, inclusi i comandi SSH diretti per connettersi a ciascuna di esse. È anche possibile utilizzare il file `ssh_connections.ini` con Ansible per gestire le VM:
+After a successful deployment, the final section of the `deploy_main.sh` output will provide a detailed summary of the VMs, including direct SSH commands to connect to each of them. You can also use the `ssh_connections.ini` file with Ansible to manage the VMs:
 
 ```bash
-# Esempio di connessione SSH diretta (dall'output dello script):
+# Example of direct SSH connection (from script output):
 ssh -i /path/to/your/key -p <host_port_ssh> <user>@<proxmox_host_ip>
 
-# Esempio di utilizzo con Ansible per testare la connettività:
-ansible -i ssh_connections.ini <nome_vm> -m ping
+# Example of use with Ansible to test connectivity:
+ansible -i ssh_connections.ini <vm_name> -m ping
 
-# Esempio di esecuzione di un comando remoto con Ansible:
-ansible -i ssh_connections.ini <nome_vm> -a "hostname" # Esegue 'hostname' sulla VM
+# Example of running a remote command with Ansible:
+ansible -i ssh_connections.ini <vm_name> -a "hostname" # Executes 'hostname' on the VM
 ```
 
-##  troubleshooting
+##  Troubleshooting
 
-### `sudo: a password is required` durante la configurazione NAT
+### `sudo: a password is required` during NAT configuration
 
-**Problema**: L'esecuzione del playbook Ansible per le regole NAT fallisce con un errore `sudo: a password is required`.
+**Problem**: The Ansible playbook for NAT rules fails with a `sudo: a password is required` error.
 
-**Causa**: Questo accade perché il playbook Ansible tenta di eseguire operazioni con privilegi di root (`become: true`) sul `localhost` (la macchina da cui stai eseguendo lo script), ma non ha una password per `sudo`.
+**Cause**: This happens because the Ansible playbook attempts to perform operations with root privileges (`become: true`) on `localhost` (the machine from which you are running the script), but it does not have a password for `sudo`.
 
-**Soluzione**: Assicurati che il task Ansible che modifica i file locali (come `inventory-nat-rules.ini` o `ssh_connections.ini`) abbia `become: false` esplicitamente impostato. Questo indica ad Ansible di non usare `sudo` per quel task specifico, poiché non sono necessari privilegi di root per modificare file nella tua directory utente.
+**Solution**: Ensure that the Ansible task modifying local files (like `inventory-nat-rules.ini` or `ssh_connections.ini`) has `become: false` explicitly set. This tells Ansible not to use `sudo` for that specific task, as root privileges are not required to modify files in your user directory.
 
-### `git filter-repo` fallisce o non è trovato
+### `git filter-repo` fails or is not found
 
-**Problema**: Il comando `git filter-repo` non viene riconosciuto o fallisce durante la riscrittura della cronologia.
+**Problem**: The `git filter-repo` command is not recognized or fails during history rewriting.
 
-**Causa**: `git filter-repo` potrebbe non essere installato o non essere nel PATH del tuo sistema.
+**Cause**: `git filter-repo` might not be installed or not be in your system's PATH.
 
-**Soluzione**: Installa `git filter-repo` utilizzando il tuo gestore di pacchetti preferito. Ad esempio:
+**Solution**: Install `git filter-repo` using your preferred package manager. For example:
 -   **Python pip**: `pip install git-filter-repo`
 -   **macOS Homebrew**: `brew install git-filter-repo`
 
-### Problemi di Connettività SSH alle VM
+### SSH Connectivity Issues to VMs
 
-**Problema**: Non riesci a connetterti via SSH alle VM dopo il deployment.
+**Problem**: You cannot connect via SSH to VMs after deployment.
 
-**Causa Possibile**: Le regole NAT potrebbero non essere state applicate correttamente, il firewall del Proxmox host potrebbe bloccare le connessioni, o la VM potrebbe non aver avviato correttamente il servizio SSH.
+**Possible Cause**: NAT rules might not have been applied correctly, the Proxmox host's firewall might be blocking connections, or the VM might not have started the SSH service correctly.
 
-**Soluzione**: 
-1.  **Verifica le Regole NAT**: Controlla l'output del deployment per assicurarti che le regole NAT siano state configurate con successo. Puoi anche accedere al Proxmox host e verificare manualmente le regole `iptables` (`iptables -t nat -L PREROUTING`).
-2.  **Firewall Proxmox**: Assicurati che il firewall del Proxmox host non stia bloccando le porte che hai mappato. Potrebbe essere necessario aggiungere regole per consentire il traffico in ingresso sulle porte NATtate.
-3.  **Stato VM**: Verifica lo stato della VM sul Proxmox VE UI. Assicurati che sia in esecuzione e che il servizio SSH sia attivo all'interno della VM.
-4.  **Chiave SSH**: Controlla che la chiave SSH specificata sia corretta e che tu stia usando il percorso completo e i permessi corretti (`chmod 400 your_key_file`).
+**Solution**: 
+1.  **Verify NAT Rules**: Check the deployment output to ensure that NAT rules were successfully configured. You can also access the Proxmox host and manually verify `iptables` rules (`iptables -t nat -L PREROUTING`).
+2.  **Proxmox Firewall**: Ensure that the Proxmox host's firewall is not blocking the ports you have mapped. You might need to add rules to allow incoming traffic on the NATted ports.
+3.  **VM Status**: Check the VM status on the Proxmox VE UI. Ensure it is running and that the SSH service is active within the VM.
+4.  **SSH Key**: Verify that the specified SSH key is correct and that you are using the full path and correct permissions (`chmod 400 your_key_file`).
 
-## ⚠️ Note sulla Riscrittura della Cronologia Git
+## ⚠️ Notes on Git History Rewriting
 
-Questo progetto ha subito una riscrittura della cronologia Git per rimuovere tutti i file `.ini` dai commit passati. Questa è un'operazione **distruttiva** e **irreversibile**.
+This project has undergone a Git history rewrite to remove all `.ini` files from past commits. This is a **destructive** and **irreversible** operation.
 
--   Se hai clonato il repository prima di questa modifica, potresti dover **eliminare la tua copia locale e clonare nuovamente** il repository.
--   Se stai collaborando, assicurati che tutti i membri del team siano a conoscenza di questa modifica e aggiornino i loro repository di conseguenza.
--   Dopo la riscrittura, dovrai **riaggiungere il tuo remote `origin`** (se rimosso da `git filter-repo`) e poi eseguire un `git push --force` per aggiornare il repository remoto.
+-   If you cloned the repository before this change, you might need to **delete your local copy and re-clone** the repository.
+-   If you are collaborating, ensure all team members are aware of this change and update their repositories accordingly.
+-   After rewriting, you will need to **re-add your `origin` remote** (if removed by `git filter-repo`) and then perform a `git push --force` to update the remote repository.
 
-## 📚 Riferimenti
+## 📚 References
 
 -   [OpenTofu Documentation](https://opentofu.org/docs/)
--   [BPG Proxmox Provider](https://registry.terraform.io/providers/bpg/proxmox/latest) - Provider OpenTofu/Terraform per Proxmox.
+-   [BPG Proxmox Provider](https://registry.terraform.io/providers/bpg/proxmox/latest) - OpenTofu/Terraform Provider for Proxmox.
 -   [Ansible Documentation](https://docs.ansible.com/)
