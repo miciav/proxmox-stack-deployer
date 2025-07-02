@@ -138,6 +138,7 @@ generate_nat_rules_inventory() {
 
     print_ansible "Generazione dell'inventory per le regole NAT..."
 
+
     # Inizia il file di inventory
     cat > "$inventory_file" << EOF
 [proxmox_hosts]

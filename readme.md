@@ -44,7 +44,7 @@ Il processo di deployment è orchestrato dallo script `deploy_main.sh` e segue l
 
 Per una descrizione più dettagliata del flusso di creazione delle VM e del deployment, consultare:
 - **[Deployment Flow Documentation](DEPLOYMENT_FLOW.md)**
-- **[VM Creation Flow Diagram](vm_creation_flow.md)**
+- **[VM Creation Flow Diagram](terraform-opentofu/vm_creation_flow.md)**
 
 ## 📂 Struttura del Progetto
 

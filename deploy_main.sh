@@ -177,7 +177,7 @@ main() {
     
     # Valida il file terraform.tfvars e leggi ci_user e proxmox_host
     validate_tfvars_file
-    local proxmox_host="${3:-$PROXMOX_HOST}"
+#    local proxmox_host="${3:-$PROXMOX_HOST}"
     
     # Setup chiavi SSH
     setup_ssh_keys
@@ -208,16 +208,15 @@ main() {
     
     print_status "IP delle VM: $(echo "$vm_ips" | jq -r 'values | join(", ")')"
  
- 
 
-    
     # Configura le regole NAT usando Ansible
     if [[ "$SKIP_NAT" != "true" ]]; then
         if [[ "${SKIP_ANSIBLE:-false}" != "true" ]]; then    
             print_status "Configurazione delle regole NAT per SSH e K3s API tramite Ansible..."
             NAT_INVENTORY_FILE="./inventories/inventory-nat-rules.ini"
             NAT_PLAYBOOK_FILE="./playbooks/add_nat_rules.yml"
-            TERRAFORM_OUTPUT_JSON=$($TERRAFORM_COMMAND output -json)
+            TERRAFORM_OUTPUT_JSON=$(get_output_in_json)
+            print_debug "$TERRAFORM_OUTPUT_JSON"
             generate_nat_rules_inventory "$NAT_INVENTORY_FILE" "$TERRAFORM_OUTPUT_JSON"
             ansible-playbook -i "$NAT_INVENTORY_FILE" "$NAT_PLAYBOOK_FILE"
             echo "$ANSIBLE_OUTPUT" # Print the full output for debugging

@@ -29,10 +29,13 @@ check_prerequisites() {
     fi
     
     # Verifica file Terraform
+    cd "$TERRAFORM_DIR" || exit
     if ! ls *.tf &>/dev/null; then
         print_error "Nessun file .tf trovato nella directory corrente"
         exit 1
     fi
+    cd ..
+    print_debug "$PWD"
     
     # Verifica playbook Ansible
     if [[ ! -f "$PLAYBOOK_FILE1" ]]; then
@@ -54,6 +57,7 @@ check_prerequisites() {
     fi
     
     print_status "✓ Tutti i prerequisiti sono soddisfatti"
+
 }
 # Funzione per leggere proxmox_host da terraform.tfvars
 get_proxmox_host_from_tfvars() {
@@ -127,13 +131,12 @@ get_ci_user_from_tfvars() {
 
 # Funzione per validare terraform.tfvars
 validate_tfvars_file() {
-    local tfvars_file="terraform.tfvars" # dichiara il nome del file tfvars
-    
-    # FORZA DEBUG PER TROUBLESHOOTING (rimuovi dopo aver risolto)
-    local OLD_DEBUG="$DEBUG"
-    export DEBUG=true
-    
     print_header "VALIDAZIONE FILE TERRAFORM.TFVARS"
+    cd "$TERRAFORM_DIR" || exit 1
+    echo "$PWD"
+
+    local tfvars_file="terraform.tfvars" # dichiara il nome del file tfvars
+
     print_debug "Iniziando validazione del file: $tfvars_file"
     print_debug "Directory corrente: $(pwd)"
     
@@ -146,9 +149,6 @@ validate_tfvars_file() {
         print_status "Crea il file con contenuto simile a:"
         print_status "ci_user = \"nomeutente\""
         print_status "proxmox_host = \"192.168.1.100\""
-        
-        # RIPRISTINA DEBUG ORIGINALE
-        export DEBUG="$OLD_DEBUG"
         return 1
     fi
     
@@ -182,9 +182,6 @@ validate_tfvars_file() {
         print_error "Variabile proxmox_host non trovata in $tfvars_file"
         print_debug "Ricerca esatta per 'proxmox_host': $(grep -n "proxmox_host" "$tfvars_file" || echo "nessun risultato")"
         print_status "Aggiungi una riga come: proxmox_host = \"192.168.1.100\""
-        
-        # RIPRISTINA DEBUG ORIGINALE
-        export DEBUG="$OLD_DEBUG"
         return 1
     fi
     
@@ -196,9 +193,6 @@ validate_tfvars_file() {
     if ! declare -f get_ci_user_from_tfvars >/dev/null; then
         print_error "Funzione get_ci_user_from_tfvars non trovata"
         print_debug "Funzioni disponibili che contengono 'tfvars': $(declare -F | grep tfvars || echo "nessuna")"
-        
-        # RIPRISTINA DEBUG ORIGINALE
-        export DEBUG="$OLD_DEBUG"
         return 1
     fi
     print_debug "✓ Funzione get_ci_user_from_tfvars trovata"
@@ -206,9 +200,6 @@ validate_tfvars_file() {
     if ! declare -f get_proxmox_host_from_tfvars >/dev/null; then
         print_error "Funzione get_proxmox_host_from_tfvars non trovata"
         print_debug "Funzioni disponibili che contengono 'tfvars': $(declare -F | grep tfvars || echo "nessuna")"
-        
-        # RIPRISTINA DEBUG ORIGINALE
-        export DEBUG="$OLD_DEBUG"
         return 1
     fi
     print_debug "✓ Funzione get_proxmox_host_from_tfvars trovata"
@@ -303,7 +294,7 @@ validate_tfvars_file() {
     
     # RIPRISTINA DEBUG ORIGINALE
     export DEBUG="$OLD_DEBUG"
-    
+    cd ..
     return 0
 }
 
