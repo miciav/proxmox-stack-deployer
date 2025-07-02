@@ -101,6 +101,78 @@ output "vm_ips" {
   depends_on = [data.local_file.vm_ip]
 }
 
+# Generate variables for the J2 template
+locals {
+  # Create port mappings for each VM service
+  port_mappings = merge(
+    # SSH port mappings
+    {
+      for i in range(var.vm_count) :
+      "${proxmox_virtual_environment_vm.ubuntu-vm[i].name}_ssh" => 2200 + i
+    },
+    # K3s port mappings
+    {
+      for i in range(var.vm_count) :
+      "${proxmox_virtual_environment_vm.ubuntu-vm[i].name}_k3s" => 6443 + i
+    }
+  )
+
+  # Template variables
+  template_vars = {
+    # Proxmox host information
+    proxmox_host     = var.proxmox_host
+    proxmox_user     = var.proxmox_host_user
+    proxmox_ssh_key  = var.ssh_key_path
+    target_interface = "vmbr1"
+    source_interface = "vmbr0"
+
+    # VM information for port mappings
+    vm_services = flatten([
+      for i in range(var.vm_count) : [
+        {
+          name    = "${proxmox_virtual_environment_vm.ubuntu-vm[i].name}_ssh"
+          vm_id   = proxmox_virtual_environment_vm.ubuntu-vm[i].vm_id
+          vm_name = proxmox_virtual_environment_vm.ubuntu-vm[i].name
+          vm_ip   = chomp(data.local_file.vm_ip[i].content)
+          vm_port = 22
+          service = "SSH"
+          vm_user = var.ci_user
+        },
+        {
+          name    = "${proxmox_virtual_environment_vm.ubuntu-vm[i].name}_k3s"
+          vm_id   = proxmox_virtual_environment_vm.ubuntu-vm[i].vm_id
+          vm_name = proxmox_virtual_environment_vm.ubuntu-vm[i].name
+          vm_ip   = chomp(data.local_file.vm_ip[i].content)
+          vm_port = 6443
+          service = "k3s"
+          vm_user = var.ci_user
+        }
+      ]
+    ])
+  }
+}
+
+# Generate the inventory file using template_file
+resource "local_file" "inventory_nat_rules" {
+  depends_on = [data.local_file.vm_ip]
+
+  content = templatefile("${path.module}/../templates/inventory-nat-rules.ini.tpl", {
+    proxmox_host     = var.proxmox_host
+    proxmox_user     = var.proxmox_host_user
+    proxmox_ssh_key  = "~/.ssh/id_rsa"
+    target_interface = "vmbr1"
+    source_interface = "vmbr0"
+    vm_services      = local.template_vars.vm_services
+  })
+
+  filename = "${path.module}/../inventories/inventory-nat-rules.ini"
+
+  # Ensure directory exists
+  provisioner "local-exec" {
+    command = "mkdir -p ${path.module}/../inventories"
+  }
+}
+
 # Output per tutti gli ID delle VM
 output "vm_ids" {
   value = {
