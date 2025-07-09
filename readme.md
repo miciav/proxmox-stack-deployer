@@ -5,20 +5,25 @@ This project provides a comprehensive solution for automating the deployment and
 ## ✨ Key Features
 
 - **Scalable Multi-VM Deployment**: Efficiently create and configure an arbitrary number of VMs.
+- **Role-Based VM Configuration**: Distinguish between VMs for different purposes (K3s vs Docker) using role-based deployment.
 - **Staggered Creation**: VMs are created in parallel but with a configurable delay to optimize Proxmox host resource usage.
 - **Sequential Initialization**: VM waiting and configuration scripts are executed sequentially to ensure stability and predictability.
-- **Automatic NAT Configuration**: Dynamically configures NAT rules (for SSH and K3s API) on the Proxmox host.
-- **K3s Provisioning**: Includes automatic installation of K3s (lightweight Kubernetes) on the VMs.
+- **Automatic NAT Configuration**: Dynamically configures NAT rules (for SSH, K3s API, and Docker) on the Proxmox host.
+- **K3s Provisioning**: Includes automatic installation of K3s (lightweight Kubernetes) on designated VMs.
+- **Docker Provisioning**: Includes automatic installation of Docker on designated VMs.
 - **SSH Key Management**: Setup and management of SSH keys for secure access to VMs.
 - **Detailed Output**: Generates inventory files and connection summaries to facilitate VM access and management.
 - **OpenTofu Workspace Support**: Allows managing different deployment environments (e.g., `dev`, `prod`).
+- **Dual Deployment Options**: Both Bash (`deploy.sh`) and Python (`deploy.py`) deployment scripts available.
+- **Comprehensive Testing**: Full test suite with unit tests, integration tests, and CI/CD pipeline.
 
 ## 🛠️ Technologies Used
 
 - **[OpenTofu](https://opentofu.org/)**: For infrastructure provisioning (VMs on Proxmox).
-- **[Ansible](https://www.ansible.com/)**: For VM configuration, K3s installation, and NAT rule management on the Proxmox host.
+- **[Ansible](https://www.ansible.com/)**: For VM configuration, K3s/Docker installation, and NAT rule management on the Proxmox host.
 - **[Proxmox VE](https://www.proxmox.com/en/)**: The virtualization platform.
-- **Bash Scripting**: Orchestration of the entire deployment process via `deploy_main.sh`.
+- **Bash Scripting**: Orchestration of the entire deployment process via `deploy.sh`.
+- **Python**: Alternative deployment script (`deploy.py`) with comprehensive testing suite.
 - **`jq`**: For parsing and manipulating OpenTofu's JSON output.
 
 ## 🚀 Deployment Flow
@@ -104,14 +109,27 @@ Examples of key variables you can configure:
 -   `vm_count`: Number of VMs to create. (e.g., `vm_count = 3`)
 -   `deployment_delay`: Delay in seconds between consecutive VM creations to avoid overloading the Proxmox host. (e.g., `deployment_delay = 30`)
 -   `vm_name_prefix`: Prefix used to name the VMs. (e.g., `vm_name_prefix = "ubuntu-opentofu"`)
+-   `vm_roles`: A map specifying the role for each VM ("k3s" or "docker"). (e.g., `vm_roles = {"vm-1" = "k3s", "vm-2" = "docker"}`)
+-   `default_vm_role`: Default role for VMs not explicitly specified in vm_roles. (e.g., `default_vm_role = "k3s"`)
 -   `vm_configs`: A complex map to customize resources (CPU, RAM, disk) of individual VMs. Useful for creating VMs with different specifications within the same deployment.
 
 Example `terraform.tfvars`:
 
 ```hcl
-vm_count = 2
+vm_count = 4
 deployment_delay = 30
-vm_name_prefix = "ubuntu-opentofu"
+vm_name_prefix = "my-cluster"
+
+# VM Role Configuration
+vm_roles = {
+  "my-cluster-1" = "k3s"
+  "my-cluster-2" = "k3s"
+  "my-cluster-3" = "docker"
+  "my-cluster-4" = "docker"
+}
+
+# Default role for VMs not explicitly specified
+default_vm_role = "k3s"
 
 vm_configs = {
   "web-server-1" = {
@@ -144,11 +162,19 @@ Before running the deployment, ensure you have the following tools installed and
 
 ### Running the Deployment
 
-To start the deployment process, run the main script from the project root directory:
+The project provides two deployment options:
 
+**Option 1: Bash Script (Traditional)**
 ```bash
 ./deploy.sh [OPTIONS]
 ```
+
+**Option 2: Python Script (Modern with Testing)**
+```bash
+python deploy.py [OPTIONS]
+```
+
+Both scripts provide the same functionality and command-line options.
 
 **Command Line Options:**
 
@@ -160,6 +186,7 @@ To start the deployment process, run the main script from the project root direc
 -   `--auto-approve`: Automatically approves changes proposed by OpenTofu (`tofu apply -auto-approve`), avoiding manual confirmation prompts.
 -   `--no-vm-update`: Skips the VM configuration playbook (`configure-vms.yml`).
 -   `--no-k3s`: Skips the K3s installation playbook (`k3s_install.yml`).
+-   `--no-docker`: Skips the Docker installation playbook (`docker_install.yml`).
 -   `--destroy`: Destroys the infrastructure created by OpenTofu. If used with `--auto-approve`, it will not prompt for confirmation.
 -   `-h`, `--help`: Shows a help message with all available options and usage examples.
 
@@ -211,6 +238,60 @@ ansible -i ssh_connections.ini <vm_name> -m ping
 # Example of running a remote command with Ansible:
 ansible -i ssh_connections.ini <vm_name> -a "hostname" # Executes 'hostname' on the VM
 ```
+
+## 🧪 Testing
+
+The project includes a comprehensive testing suite for the Python deployment script (`deploy.py`).
+
+### Running Tests
+
+**Install test dependencies:**
+```bash
+pip install -r requirements-test.txt
+```
+
+**Run all tests:**
+```bash
+python run_tests.py
+```
+
+**Run specific test categories:**
+```bash
+# Unit tests only
+python run_tests.py --unit
+
+# Integration tests only
+python run_tests.py --integration
+
+# Tests with coverage report
+python run_tests.py --coverage
+
+# Code quality checks
+python run_tests.py --lint
+
+# All tests and quality checks
+python run_tests.py --all
+```
+
+**Direct pytest usage:**
+```bash
+# Run all tests
+python -m pytest test_deploy.py -v
+
+# Run with coverage
+python -m pytest test_deploy.py --cov=deploy --cov-report=html
+```
+
+### Test Coverage
+
+The test suite includes:
+- **Unit Tests**: Test individual functions and argument parsing
+- **Integration Tests**: Test complete deployment workflows
+- **Error Handling**: Test edge cases and error conditions
+- **Mocking**: All external commands are mocked to avoid side effects
+- **CI/CD**: GitHub Actions workflow for automated testing
+
+**Note**: The Python deployment script and tests are provided as-is and have not been fully tested in a production environment. Use with caution and validate thoroughly in your specific setup.
 
 ##  Troubleshooting
 
