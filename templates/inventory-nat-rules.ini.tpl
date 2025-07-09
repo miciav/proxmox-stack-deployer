@@ -10,5 +10,5 @@ ansible_python_interpreter=/usr/bin/python3
 
 [port_mappings]
 %{ for service in vm_services ~}
-${service.name} vm_id=${service.vm_id} vm_name=${service.vm_name} vm_ip=${service.vm_ip} vm_port=${service.vm_port} service=${service.service}%{ if service.vm_user != "" } vm_user=${service.vm_user}%{ endif }
+${service.name} vm_id=${service.vm_id} vm_name=${service.vm_name} vm_ip=${service.vm_ip} vm_port=${service.vm_port} service=${service.service}%{ if service.vm_user != "" } vm_user=${service.vm_user}%{ endif } vm_role=${service.vm_role}
 %{ endfor ~}

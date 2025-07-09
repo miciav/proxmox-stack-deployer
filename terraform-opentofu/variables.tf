@@ -160,3 +160,29 @@ variable "deployment_delay" {
     error_message = "Il ritardo di deployment deve essere compreso tra 0 e 300 secondi."
   }
 }
+
+# VM Role Configuration
+variable "vm_roles" {
+  description = "Mappa dei ruoli per ciascuna VM. Ogni VM può avere ruolo 'k3s' o 'docker'. Se non specificato, default è 'k3s'."
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition = alltrue([
+      for role in values(var.vm_roles) : contains(["k3s", "docker"], role)
+    ])
+    error_message = "I ruoli VM devono essere 'k3s' o 'docker'."
+  }
+}
+
+# Default role for VMs not specified in vm_roles
+variable "default_vm_role" {
+  description = "Ruolo predefinito per le VM non specificate nella mappa vm_roles"
+  type        = string
+  default     = "k3s"
+
+  validation {
+    condition     = contains(["k3s", "docker"], var.default_vm_role)
+    error_message = "Il ruolo predefinito deve essere 'k3s' o 'docker'."
+  }
+}
