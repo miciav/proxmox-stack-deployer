@@ -13,6 +13,49 @@ source "$(dirname "$0")/lib/terraform.sh" # Terraform/OpenTofu management
 # Ensure cleanup is called on exit
 trap cleanup EXIT
 
+# Function to load configuration from file
+load_config() {
+    local config_file="${1:-deploy.config}"
+    
+    if [[ -f "$config_file" ]]; then
+        print_status "Loading configuration from '$config_file'"
+        
+        # Source the config file, but only process valid variable assignments
+        while IFS= read -r line; do
+            # Skip comments and empty lines
+            if [[ "$line" =~ ^[[:space:]]*# ]] || [[ -z "${line// }" ]]; then
+                continue
+            fi
+            
+            # Process valid variable assignments
+            if [[ "$line" =~ ^[[:space:]]*([A-Z_]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+                local var_name="${BASH_REMATCH[1]}"
+                local var_value="${BASH_REMATCH[2]}"
+                
+                # Remove quotes from value
+                var_value="${var_value//\"/}"
+                var_value="${var_value//\'/}"
+                
+                # Set the variable if it's not already set by command line
+                case "$var_name" in
+                    FORCE_REDEPLOY|CONTINUE_IF_DEPLOYED|SKIP_NAT|SKIP_ANSIBLE|NO_VM_UPDATE|NO_K3S|NO_DOCKER|NO_OPENFAAS|AUTO_APPROVE|DESTROY)
+                        if [[ "${!var_name}" == "false" ]] && [[ "$var_value" == "true" ]]; then
+                            declare -g "$var_name"="true"
+                        fi
+                        ;;
+                    WORKSPACE)
+                        if [[ -z "${!var_name}" ]] && [[ -n "$var_value" ]]; then
+                            declare -g "$var_name"="$var_value"
+                        fi
+                        ;;
+                esac
+            fi
+        done < "$config_file"
+    else
+        print_status "Configuration file '$config_file' not found, using default values"
+    fi
+}
+
 # Function to parse arguments
 parse_arguments() {
     # Initialize global variables with default values
@@ -85,6 +128,9 @@ parse_arguments() {
         esac
     done
     
+    # Load configuration file (this will only set variables that weren't set by command line)
+    load_config "deploy.config"
+    
     # Export variables to make them available to other scripts
     export FORCE_REDEPLOY CONTINUE_IF_DEPLOYED SKIP_NAT SKIP_ANSIBLE NO_VM_UPDATE NO_K3S NO_DOCKER NO_OPENFAAS WORKSPACE AUTO_APPROVE
 }
@@ -95,8 +141,8 @@ show_help() {
 Usage: $0 [OPTIONS]
 
 OPTIONS:
-    --force-redeploy        Force a new deployment even if one already exists
-    --continue-if-deployed  Continue execution even if the deployment already exists
+    --force-redeploy       Force a new deployment even if one already exists
+    --continue-if-deployed Continue execution even if the deployment already exists
     --skip-nat             Skip NAT rule configuration
     --skip-ansible         Skip Ansible configuration
     --workspace NAME       Select a specific Terraform workspace
@@ -107,6 +153,10 @@ OPTIONS:
     --no-openfaas          Skip OpenFaaS installation playbook (install_openfaas.yml)
     --destroy              Destroy the created infrastructure
     -h, --help             Show this help
+
+CONFIGURATION:
+    Configuration file: deploy.config (command line flags override file settings)
+    Place this file in the same directory as the deployment script.
 
 EXAMPLES:
     $0 --auto-approve --continue-if-deployed

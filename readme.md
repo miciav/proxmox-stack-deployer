@@ -188,6 +188,59 @@ python deploy.py [OPTIONS]
 
 Both scripts provide the same functionality and command-line options.
 
+## 📋 Configuration File
+
+The deployment scripts support a configuration file (`deploy.config`) that allows you to set default values for all command-line options. This eliminates the need to specify commonly used flags repeatedly.
+
+### Configuration File Format
+
+The configuration file uses a simple `KEY=value` format (similar to shell variables or `.env` files):
+
+```bash
+# Deployment Configuration File
+# Format: KEY=value (no spaces around =)
+# Boolean values: true/false
+# String values: can be quoted or unquoted
+# Comments: lines starting with #
+
+# Deployment behavior
+FORCE_REDEPLOY=false
+CONTINUE_IF_DEPLOYED=false
+AUTO_APPROVE=true
+
+# Skip options
+SKIP_NAT=false
+SKIP_ANSIBLE=false
+NO_VM_UPDATE=false
+NO_K3S=false
+NO_DOCKER=false
+NO_OPENFAAS=false
+
+# Terraform/OpenTofu settings
+WORKSPACE=development
+
+# Destruction mode
+DESTROY=false
+```
+
+**File Location:** Place the `deploy.config` file in the same directory as your deployment scripts (`deploy.sh` or `deploy.py`). The scripts will automatically detect and load it.
+
+### Using Configuration Files
+
+```bash
+# The scripts automatically look for 'deploy.config' in the current directory
+./deploy.sh
+python deploy.py
+
+# Override config file settings with flags
+./deploy.sh --force-redeploy  # Overrides FORCE_REDEPLOY in config
+```
+
+**Priority Order:**
+1. Command line flags (highest priority)
+2. Configuration file settings
+3. Default values (lowest priority)
+
 **Command Line Options:**
 
 -   `--force-redeploy`: Forces a new deployment even if an existing `terraform.tfstate` indicates that resources have already been created. Useful for recreating the environment from scratch.
