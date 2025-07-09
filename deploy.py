@@ -37,15 +37,22 @@ def load_config(config_file="deploy.config"):
     try:
         parser = configparser.ConfigParser()
         parser.read(config_file)
-        
+
         # Read from different sections
         sections_mapping = {
-            'deployment': ['force_redeploy', 'continue_if_deployed', 'auto_approve'],
-            'skip_options': ['skip_nat', 'skip_ansible', 'no_vm_update', 'no_k3s', 'no_docker', 'no_openfaas'],
-            'terraform': ['workspace'],
-            'destruction': ['destroy']
+            "deployment": ["force_redeploy", "continue_if_deployed", "auto_approve"],
+            "skip_options": [
+                "skip_nat",
+                "skip_ansible",
+                "no_vm_update",
+                "no_k3s",
+                "no_docker",
+                "no_openfaas",
+            ],
+            "terraform": ["workspace"],
+            "destruction": ["destroy"],
         }
-        
+
         for section_name, keys in sections_mapping.items():
             if parser.has_section(section_name):
                 for key in keys:
@@ -53,7 +60,7 @@ def load_config(config_file="deploy.config"):
                         value = parser.get(section_name, key)
                         # Remove quotes if present
                         value = value.strip().strip('"').strip("'")
-                        
+
                         # Convert string values to appropriate types
                         if value.lower() in ["true", "false"]:
                             config[key] = value.lower() == "true"
