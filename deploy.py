@@ -13,7 +13,7 @@ def run_command(command, check=True):
 
 
 def load_config(config_file="deploy.config"):
-    """Load configuration from file, return default values if file doesn't exist"""
+    """Load configuration from INI file, return default values if file doesn't exist"""
     config = {
         "force_redeploy": False,
         "continue_if_deployed": False,
@@ -35,26 +35,32 @@ def load_config(config_file="deploy.config"):
     print(f"Loading configuration from '{config_file}'")
 
     try:
-        with open(config_file, "r") as f:
-            lines = f.readlines()
-
-        for line in lines:
-            line = line.strip()
-            if line and not line.startswith("#"):
-                if "=" in line:
-                    key, value = line.split("=", 1)
-                    key = key.strip().lower()
-                    value = value.strip().strip('"').strip("'")
-
-                    # Convert string values to appropriate types
-                    if value.lower() in ["true", "false"]:
-                        value = value.lower() == "true"
-                    elif value == "":
-                        value = ""
-
-                    # Map config keys to argument names
-                    if key in config:
-                        config[key] = value
+        parser = configparser.ConfigParser()
+        parser.read(config_file)
+        
+        # Read from different sections
+        sections_mapping = {
+            'deployment': ['force_redeploy', 'continue_if_deployed', 'auto_approve'],
+            'skip_options': ['skip_nat', 'skip_ansible', 'no_vm_update', 'no_k3s', 'no_docker', 'no_openfaas'],
+            'terraform': ['workspace'],
+            'destruction': ['destroy']
+        }
+        
+        for section_name, keys in sections_mapping.items():
+            if parser.has_section(section_name):
+                for key in keys:
+                    if parser.has_option(section_name, key):
+                        value = parser.get(section_name, key)
+                        # Remove quotes if present
+                        value = value.strip().strip('"').strip("'")
+                        
+                        # Convert string values to appropriate types
+                        if value.lower() in ["true", "false"]:
+                            config[key] = value.lower() == "true"
+                        elif value == "":
+                            config[key] = ""
+                        else:
+                            config[key] = value
 
         return config
 

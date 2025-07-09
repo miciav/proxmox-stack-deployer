@@ -12,7 +12,6 @@ This test suite covers:
 
 import unittest
 from unittest.mock import patch, MagicMock, call
-import pytest
 import sys
 import os
 from io import StringIO
@@ -21,6 +20,8 @@ from io import StringIO
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import deploy
+import tempfile
+import configparser
 
 
 class TestArgumentParsing(unittest.TestCase):
@@ -411,6 +412,180 @@ class TestIntegration(unittest.TestCase):
 
         for cmd in expected_commands:
             mock_subprocess.assert_any_call(cmd, shell=True, check=True)
+
+
+class TestConfigurationLoading(unittest.TestCase):
+    """Test INI configuration file loading"""
+
+    def test_load_config_missing_file(self):
+        """Test loading config when file doesn't exist"""
+        config = deploy.load_config("nonexistent.config")
+        
+        # Should return default values
+        self.assertFalse(config['force_redeploy'])
+        self.assertFalse(config['continue_if_deployed'])
+        self.assertFalse(config['skip_nat'])
+        self.assertFalse(config['skip_ansible'])
+        self.assertFalse(config['no_vm_update'])
+        self.assertFalse(config['no_k3s'])
+        self.assertFalse(config['no_docker'])
+        self.assertFalse(config['no_openfaas'])
+        self.assertFalse(config['destroy'])
+        self.assertEqual(config['workspace'], "")
+        self.assertFalse(config['auto_approve'])
+
+    def test_load_config_ini_format(self):
+        """Test loading INI format configuration"""
+        ini_content = """
+; Test INI configuration
+[deployment]
+force_redeploy=true
+continue_if_deployed=false
+auto_approve=true
+
+[skip_options]
+skip_nat=true
+skip_ansible=false
+no_vm_update=true
+no_k3s=false
+no_docker=true
+no_openfaas=false
+
+[terraform]
+workspace=test-env
+
+[destruction]
+destroy=false
+"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.config', delete=False) as f:
+            f.write(ini_content)
+            f.flush()
+            
+            try:
+                config = deploy.load_config(f.name)
+                
+                # Check deployment section
+                self.assertTrue(config['force_redeploy'])
+                self.assertFalse(config['continue_if_deployed'])
+                self.assertTrue(config['auto_approve'])
+                
+                # Check skip_options section
+                self.assertTrue(config['skip_nat'])
+                self.assertFalse(config['skip_ansible'])
+                self.assertTrue(config['no_vm_update'])
+                self.assertFalse(config['no_k3s'])
+                self.assertTrue(config['no_docker'])
+                self.assertFalse(config['no_openfaas'])
+                
+                # Check terraform section
+                self.assertEqual(config['workspace'], 'test-env')
+                
+                # Check destruction section
+                self.assertFalse(config['destroy'])
+                
+            finally:
+                os.unlink(f.name)
+
+    def test_load_config_quoted_values(self):
+        """Test loading configuration with quoted values"""
+        ini_content = """
+[terraform]
+workspace="production"
+
+[deployment]
+auto_approve='true'
+"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.config', delete=False) as f:
+            f.write(ini_content)
+            f.flush()
+            
+            try:
+                config = deploy.load_config(f.name)
+                
+                # Quotes should be stripped
+                self.assertEqual(config['workspace'], 'production')
+                self.assertTrue(config['auto_approve'])
+                
+            finally:
+                os.unlink(f.name)
+
+    def test_load_config_empty_values(self):
+        """Test loading configuration with empty values"""
+        ini_content = """
+[terraform]
+workspace=
+
+[deployment]
+force_redeploy=false
+"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.config', delete=False) as f:
+            f.write(ini_content)
+            f.flush()
+            
+            try:
+                config = deploy.load_config(f.name)
+                
+                # Empty values should remain empty
+                self.assertEqual(config['workspace'], '')
+                self.assertFalse(config['force_redeploy'])
+                
+            finally:
+                os.unlink(f.name)
+
+    def test_load_config_malformed_ini(self):
+        """Test loading malformed INI file"""
+        ini_content = """
+[deployment
+force_redeploy=true
+"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.config', delete=False) as f:
+            f.write(ini_content)
+            f.flush()
+            
+            try:
+                # Should handle malformed INI gracefully and return defaults
+                config = deploy.load_config(f.name)
+                
+                # Should return default values when parsing fails
+                self.assertFalse(config['force_redeploy'])
+                self.assertFalse(config['auto_approve'])
+                
+            finally:
+                os.unlink(f.name)
+
+    @patch("deploy.load_config")
+    def test_config_integration_with_argument_parsing(self, mock_load_config):
+        """Test that configuration is properly integrated with argument parsing"""
+        # Mock configuration that should be overridden by command line
+        mock_load_config.return_value = {
+            'force_redeploy': True,
+            'continue_if_deployed': False,
+            'skip_nat': True,
+            'skip_ansible': False,
+            'no_vm_update': False,
+            'no_k3s': False,
+            'no_docker': False,
+            'no_openfaas': False,
+            'destroy': False,
+            'workspace': 'config-workspace',
+            'auto_approve': True,
+        }
+        
+        # Command line should override config file
+        with patch("sys.argv", ["deploy.py", "--workspace", "cli-workspace"]):
+            args = deploy.parse_arguments()
+            
+            # Config file values should be applied
+            self.assertTrue(args.force_redeploy)
+            self.assertTrue(args.skip_nat)
+            self.assertTrue(args.auto_approve)
+            
+            # Command line should override config file
+            self.assertEqual(args.workspace, "cli-workspace")
 
 
 class TestUtilities(unittest.TestCase):

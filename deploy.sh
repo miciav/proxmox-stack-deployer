@@ -13,44 +13,25 @@ source "$(dirname "$0")/lib/terraform.sh" # Terraform/OpenTofu management
 # Ensure cleanup is called on exit
 trap cleanup EXIT
 
-# Function to load configuration from file
+# Function to load configuration from INI file
 load_config() {
     local config_file="${1:-deploy.config}"
-    
+
     if [[ -f "$config_file" ]]; then
         print_status "Loading configuration from '$config_file'"
         
-        # Source the config file, but only process valid variable assignments
-        while IFS= read -r line; do
-            # Skip comments and empty lines
-            if [[ "$line" =~ ^[[:space:]]*# ]] || [[ -z "${line// }" ]]; then
-                continue
-            fi
-            
-            # Process valid variable assignments
-            if [[ "$line" =~ ^[[:space:]]*([A-Z_]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
-                local var_name="${BASH_REMATCH[1]}"
-                local var_value="${BASH_REMATCH[2]}"
-                
-                # Remove quotes from value
-                var_value="${var_value//\"/}"
-                var_value="${var_value//\'/}"
-                
-                # Set the variable if it's not already set by command line
-                case "$var_name" in
-                    FORCE_REDEPLOY|CONTINUE_IF_DEPLOYED|SKIP_NAT|SKIP_ANSIBLE|NO_VM_UPDATE|NO_K3S|NO_DOCKER|NO_OPENFAAS|AUTO_APPROVE|DESTROY)
-                        if [[ "${!var_name}" == "false" ]] && [[ "$var_value" == "true" ]]; then
-                            declare -g "$var_name"="true"
-                        fi
-                        ;;
-                    WORKSPACE)
-                        if [[ -z "${!var_name}" ]] && [[ -n "$var_value" ]]; then
-                            declare -g "$var_name"="$var_value"
-                        fi
-                        ;;
-                esac
-            fi
-        done < "$config_file"
+        # Use awk to simulate INI parsing
+        eval $(awk 'BEGIN { section="" } \
+            /^[[:space:]]*\[.*\][[:space:]]*$/ {\
+                gsub(/[][]/, ""); section=tolower($0); next } \
+            /^[[:space:]]*;/ { next } \
+            /^[^#]/ && /^[[:space:]]*[^[:space:]=]+[[:space:]]*=[[:space:]]*.*$/ {\
+                split($0, a, "="); \
+                gsub(/[[:space:]]+/, "", a[1]); \
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", a[2]); \
+                print tolower(section "_" a[1]) "=" a[2] \
+            }' "$config_file")
+
     else
         print_status "Configuration file '$config_file' not found, using default values"
     fi
@@ -130,6 +111,19 @@ parse_arguments() {
     
     # Load configuration file (this will only set variables that weren't set by command line)
     load_config "deploy.config"
+    
+    # Map INI section_key format to our variable names and apply defaults
+    [[ "$FORCE_REDEPLOY" == "false" ]] && [[ "$deployment_force_redeploy" == "true" ]] && FORCE_REDEPLOY="true"
+    [[ "$CONTINUE_IF_DEPLOYED" == "false" ]] && [[ "$deployment_continue_if_deployed" == "true" ]] && CONTINUE_IF_DEPLOYED="true"
+    [[ "$AUTO_APPROVE" == "false" ]] && [[ "$deployment_auto_approve" == "true" ]] && AUTO_APPROVE="true"
+    [[ "$SKIP_NAT" == "false" ]] && [[ "$skip_options_skip_nat" == "true" ]] && SKIP_NAT="true"
+    [[ "$SKIP_ANSIBLE" == "false" ]] && [[ "$skip_options_skip_ansible" == "true" ]] && SKIP_ANSIBLE="true"
+    [[ "$NO_VM_UPDATE" == "false" ]] && [[ "$skip_options_no_vm_update" == "true" ]] && NO_VM_UPDATE="true"
+    [[ "$NO_K3S" == "false" ]] && [[ "$skip_options_no_k3s" == "true" ]] && NO_K3S="true"
+    [[ "$NO_DOCKER" == "false" ]] && [[ "$skip_options_no_docker" == "true" ]] && NO_DOCKER="true"
+    [[ "$NO_OPENFAAS" == "false" ]] && [[ "$skip_options_no_openfaas" == "true" ]] && NO_OPENFAAS="true"
+    [[ "$DESTROY" == "false" ]] && [[ "$destruction_destroy" == "true" ]] && DESTROY="true"
+    [[ -z "$WORKSPACE" ]] && [[ -n "$terraform_workspace" ]] && WORKSPACE="$terraform_workspace"
     
     # Export variables to make them available to other scripts
     export FORCE_REDEPLOY CONTINUE_IF_DEPLOYED SKIP_NAT SKIP_ANSIBLE NO_VM_UPDATE NO_K3S NO_DOCKER NO_OPENFAAS WORKSPACE AUTO_APPROVE

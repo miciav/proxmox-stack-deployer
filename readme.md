@@ -194,34 +194,63 @@ The deployment scripts support a configuration file (`deploy.config`) that allow
 
 ### Configuration File Format
 
-The configuration file uses a simple `KEY=value` format (similar to shell variables or `.env` files):
+The configuration file uses INI format with sections and key-value pairs:
 
-```bash
-# Deployment Configuration File
-# Format: KEY=value (no spaces around =)
-# Boolean values: true/false
-# String values: can be quoted or unquoted
-# Comments: lines starting with #
+```ini
+; Deployment Configuration File
+; This file allows you to set default values for deployment options
+; Command line flags will override these settings if provided
+; 
+; Format: INI format with sections [section_name] and key=value pairs
+; Boolean values: true/false
+; String values: can be quoted or unquoted
+; Comments: lines starting with ;
 
-# Deployment behavior
-FORCE_REDEPLOY=false
-CONTINUE_IF_DEPLOYED=false
-AUTO_APPROVE=true
+[deployment]
+; Force a new deployment even if one already exists
+force_redeploy=false
 
-# Skip options
-SKIP_NAT=false
-SKIP_ANSIBLE=false
-NO_VM_UPDATE=false
-NO_K3S=false
-NO_DOCKER=false
-NO_OPENFAAS=false
+; Continue execution even if deployment already exists
+continue_if_deployed=false
 
-# Terraform/OpenTofu settings
-WORKSPACE=development
+; Automatically approve Terraform changes (no manual confirmation)
+auto_approve=false
 
-# Destruction mode
-DESTROY=false
+[skip_options]
+; Skip NAT rule configuration
+skip_nat=false
+
+; Skip all Ansible configuration phases
+skip_ansible=false
+
+; Skip VM configuration playbook (configure-vms.yml)
+no_vm_update=false
+
+; Skip K3s installation playbook (k3s_install.yml)
+no_k3s=false
+
+; Skip Docker installation playbook (docker_install.yml)
+no_docker=false
+
+; Skip OpenFaaS installation playbook (install_openfaas.yml)
+no_openfaas=false
+
+[terraform]
+; Terraform workspace to use (leave empty for default)
+workspace=""
+
+[destruction]
+; Destroy the created infrastructure
+destroy=false
 ```
+
+### INI Format Benefits
+
+- **Organized Structure**: Related settings are grouped into logical sections
+- **Better Readability**: Clear separation between different configuration areas
+- **Standard Format**: Uses widely recognized INI conventions
+- **Tool Compatibility**: Works with standard configuration parsers
+- **Flexible Comments**: Both `;` and `#` comment styles supported
 
 **File Location:** Place the `deploy.config` file in the same directory as your deployment scripts (`deploy.sh` or `deploy.py`). The scripts will automatically detect and load it.
 
