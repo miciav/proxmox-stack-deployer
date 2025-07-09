@@ -19,6 +19,7 @@ def parse_arguments():
     parser.add_argument('--no-vm-update', action='store_true', help='Skip VM configuration playbook (configure-vms.yml)')
     parser.add_argument('--no-k3s', action='store_true', help='Skip K3s installation playbook (k3s_install.yml)')
     parser.add_argument('--no-docker', action='store_true', help='Skip Docker installation playbook (docker_install.yml)')
+    parser.add_argument('--no-openfaas', action='store_true', help='Skip OpenFaaS installation playbook (install_openfaas.yml)')
     parser.add_argument('--destroy', action='store_true', help='Destroy the created infrastructure')
     parser.add_argument('--workspace', help='Select a specific Terraform workspace')
     parser.add_argument('--auto-approve', action='store_true', help='Automatically approve Terraform changes')
@@ -48,6 +49,8 @@ def main():
             run_ansible_k3s_installation()
         if not args.no_docker:
             run_ansible_docker_installation()
+        if not args.no_openfaas:
+            run_ansible_openfaas_installation()
 
     print("Deployment completed")
 
@@ -92,6 +95,11 @@ def run_ansible_k3s_installation():
 def run_ansible_docker_installation():
     print("Running Ansible Docker installation")
     run_command("ansible-playbook -i ./inventories/inventory_updates.ini ./playbooks/docker_install.yml")
+
+
+def run_ansible_openfaas_installation():
+    print("Running Ansible OpenFaaS installation")
+    run_command("ansible-playbook -i ./inventories/inventory_updates.ini ./playbooks/install_openfaas.yml")
 
 
 if __name__ == '__main__':

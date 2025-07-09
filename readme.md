@@ -5,12 +5,13 @@ This project provides a comprehensive solution for automating the deployment and
 ## ✨ Key Features
 
 - **Scalable Multi-VM Deployment**: Efficiently create and configure an arbitrary number of VMs.
-- **Role-Based VM Configuration**: Distinguish between VMs for different purposes (K3s vs Docker) using role-based deployment.
+- **Role-Based VM Configuration**: Distinguish between VMs for different purposes (K3s, Docker, OpenFaaS) using role-based deployment.
 - **Staggered Creation**: VMs are created in parallel but with a configurable delay to optimize Proxmox host resource usage.
 - **Sequential Initialization**: VM waiting and configuration scripts are executed sequentially to ensure stability and predictability.
 - **Automatic NAT Configuration**: Dynamically configures NAT rules (for SSH, K3s API, and Docker) on the Proxmox host.
 - **K3s Provisioning**: Includes automatic installation of K3s (lightweight Kubernetes) on designated VMs.
 - **Docker Provisioning**: Includes automatic installation of Docker on designated VMs.
+- **OpenFaaS Deployment**: Automatical installation and configuration of OpenFaaS on K3s nodes using Helm.
 - **SSH Key Management**: Setup and management of SSH keys for secure access to VMs.
 - **Detailed Output**: Generates inventory files and connection summaries to facilitate VM access and management.
 - **OpenTofu Workspace Support**: Allows managing different deployment environments (e.g., `dev`, `prod`).
@@ -21,6 +22,7 @@ This project provides a comprehensive solution for automating the deployment and
 
 - **[OpenTofu](https://opentofu.org/)**: For infrastructure provisioning (VMs on Proxmox).
 - **[Ansible](https://www.ansible.com/)**: For VM configuration, K3s/Docker installation, and NAT rule management on the Proxmox host.
+- **[Helm](https://helm.sh/)**: For deploying OpenFaaS on Kubernetes (K3s) clusters.
 - **[Proxmox VE](https://www.proxmox.com/en/)**: The virtualization platform.
 - **Bash Scripting**: Orchestration of the entire deployment process via `deploy.sh`.
 - **Python**: Alternative deployment script (`deploy.py`) with comprehensive testing suite.
@@ -45,6 +47,7 @@ This project provides a comprehensive solution for automating the deployment and
 8.  **VM Configuration (Ansible)**:
     - Executes the Ansible playbook `configure-vm.yml` for initial VM configuration.
     - Executes the Ansible playbook `k3s_install.yml` to install K3s on the VMs.
+    - Executes the Ansible playbook `install_openfaas.yml` to deploy OpenFaaS using Helm.
 9.  **Display Final Information**: Shows a detailed summary of created VMs, NAT mappings, and SSH connection commands.
 
 For a more detailed description of the VM creation and deployment flow, refer to:
@@ -55,18 +58,27 @@ For a more detailed description of the VM creation and deployment flow, refer to
 
 ```
 .gitignore
-add_ssh_nat_rules2.yml
-configure-vm.yml
-deploy_main.sh
+deploy.py
+deploy.sh
 DEPLOYMENT_FLOW.md
-k3s_install.yml
-main.tf
 readme.md
-requirements.yml
-tofu-workflow.sh
-variables.tf
-vm_creation_flow.md
-wait_for_vm.sh
+requirements-test.txt
+run_tests.py
+test_deploy.py
+
+playbooks/
+├── add_nat_rules.yml
+├── configure-vms.yml
+├── docker_install.yml
+├── install_openfaas.yml
+├── k3s_install.yml
+└── remove_nat_rules.yml
+
+terraform-opentofu/
+├── main.tf
+├── variables.tf
+├── vm_creation_flow.md
+└── wait_for_vm.sh
 
 lib/
 ├── ansible.sh
@@ -187,6 +199,7 @@ Both scripts provide the same functionality and command-line options.
 -   `--no-vm-update`: Skips the VM configuration playbook (`configure-vms.yml`).
 -   `--no-k3s`: Skips the K3s installation playbook (`k3s_install.yml`).
 -   `--no-docker`: Skips the Docker installation playbook (`docker_install.yml`).
+-   `--no-openfaas`: Skips the OpenFaaS installation playbook (`install_openfaas.yml`).
 -   `--destroy`: Destroys the infrastructure created by OpenTofu. If used with `--auto-approve`, it will not prompt for confirmation.
 -   `-h`, `--help`: Shows a help message with all available options and usage examples.
 
@@ -207,6 +220,9 @@ Both scripts provide the same functionality and command-line options.
 
 # Deploys VMs but skips the K3s installation playbook
 ./deploy.sh --no-k3s
+
+# Deploys VMs but skips the OpenFaaS installation playbook
+./deploy.sh --no-openfaas
 
 # Destroys the infrastructure, requiring manual confirmation
 ./deploy.sh --destroy
@@ -237,6 +253,72 @@ ansible -i ssh_connections.ini <vm_name> -m ping
 
 # Example of running a remote command with Ansible:
 ansible -i ssh_connections.ini <vm_name> -a "hostname" # Executes 'hostname' on the VM
+```
+
+## 🚀 OpenFaaS Integration
+
+The project includes automatic OpenFaaS installation and configuration on K3s nodes using Helm.
+
+### What Gets Installed
+
+- **OpenFaaS Gateway**: Main API gateway for function management
+- **OpenFaaS Controller**: Manages function deployments in Kubernetes
+- **Prometheus**: Monitoring and metrics collection
+- **Alertmanager**: Alert management system
+- **Basic Authentication**: Secure access to the OpenFaaS UI
+
+### Configuration Details
+
+- **Namespace**: `openfaas` (system components)
+- **Function Namespace**: `openfaas-fn` (deployed functions)
+- **Gateway Port**: 31112 (NodePort service)
+- **Authentication**: Basic auth enabled with auto-generated password
+
+### Accessing OpenFaaS
+
+After deployment, OpenFaaS will be accessible via:
+
+```bash
+# Direct access (if NAT rules are configured)
+http://<proxmox_host>:<k3s_nat_port>/
+
+# Or via port-forwarding
+kubectl port-forward -n openfaas svc/gateway 8080:8080
+# Then visit: http://localhost:8080
+```
+
+**Login Credentials:**
+- **Username**: `admin`
+- **Password**: Displayed in deployment output or retrieve with:
+  ```bash
+  kubectl get secret -n openfaas basic-auth -o jsonpath="{.data.basic-auth-password}" | base64 --decode
+  ```
+
+### Managing OpenFaaS
+
+**Install OpenFaaS CLI:**
+```bash
+curl -sSL https://cli.openfaas.com | sudo sh
+```
+
+**Login to OpenFaaS:**
+```bash
+echo -n <password> | faas-cli login --username admin --password-stdin
+```
+
+**Deploy a test function:**
+```bash
+faas-cli deploy --image functions/figlet --name figlet
+```
+
+### Skipping OpenFaaS Installation
+
+If you don't want OpenFaaS installed, use the `--no-openfaas` flag:
+
+```bash
+./deploy.sh --no-openfaas
+# or
+python deploy.py --no-openfaas
 ```
 
 ## 🧪 Testing

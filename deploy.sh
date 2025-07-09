@@ -23,6 +23,7 @@ parse_arguments() {
     NO_VM_UPDATE="false"
     NO_K3S="false"
     NO_DOCKER="false"
+    NO_OPENFAAS="false"
     WORKSPACE=""
     AUTO_APPROVE="false"
     
@@ -64,6 +65,10 @@ parse_arguments() {
                 NO_DOCKER="true"
                 shift
                 ;;
+            --no-openfaas)
+                NO_OPENFAAS="true"
+                shift
+                ;;
             --destroy)
                 DESTROY="true"
                 shift
@@ -81,7 +86,7 @@ parse_arguments() {
     done
     
     # Export variables to make them available to other scripts
-    export FORCE_REDEPLOY CONTINUE_IF_DEPLOYED SKIP_NAT SKIP_ANSIBLE NO_VM_UPDATE NO_K3S NO_DOCKER WORKSPACE AUTO_APPROVE
+    export FORCE_REDEPLOY CONTINUE_IF_DEPLOYED SKIP_NAT SKIP_ANSIBLE NO_VM_UPDATE NO_K3S NO_DOCKER NO_OPENFAAS WORKSPACE AUTO_APPROVE
 }
 
 # Function to show help
@@ -99,6 +104,7 @@ OPTIONS:
     --no-vm-update         Skip VM configuration playbook (configure-vms.yml)
     --no-k3s               Skip K3s installation playbook (k3s_install.yml)
     --no-docker            Skip Docker installation playbook (docker_install.yml)
+    --no-openfaas          Skip OpenFaaS installation playbook (install_openfaas.yml)
     --destroy              Destroy the created infrastructure
     -h, --help             Show this help
 
@@ -260,6 +266,23 @@ main() {
             print_success "✓ Docker playbook completed successfully"
         else
             print_status "Skipping Docker installation (NO_DOCKER=true)"
+        fi
+    else
+        print_status "Ansible configuration skipped (SKIP_ANSIBLE=true)"
+    fi
+    
+    #Ansible task 5 - OpenFaaS installation
+    if [[ "${SKIP_ANSIBLE:-false}" != "true" ]]; then
+        if [[ "${NO_OPENFAAS}" != "true" ]]; then
+            print_status "Executing OpenFaaS playbook..."
+            OPENFAAS_PLAYBOOK_FILE="./playbooks/install_openfaas.yml"
+            if ! ansible-playbook -i "$UPDATE_INVENTORY_FILE" "$OPENFAAS_PLAYBOOK_FILE"; then
+                print_error "Error executing OpenFaaS playbook"
+                return 1
+            fi
+            print_success "✓ OpenFaaS playbook completed successfully"
+        else
+            print_status "Skipping OpenFaaS installation (NO_OPENFAAS=true)"
         fi
     else
         print_status "Ansible configuration skipped (SKIP_ANSIBLE=true)"
