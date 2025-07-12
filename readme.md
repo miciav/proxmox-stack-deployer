@@ -411,39 +411,40 @@ The project includes a comprehensive testing suite for the Python deployment scr
 
 **Install test dependencies:**
 ```bash
+# Activate your virtual environment if you have one
+source .venv/bin/activate
+
+# Install the required packages
 pip install -r requirements-test.txt
 ```
 
 **Run all tests:**
 ```bash
-python run_tests.py
+python3 run_tests.py --all
 ```
 
 **Run specific test categories:**
 ```bash
 # Unit tests only
-python run_tests.py --unit
+python3 run_tests.py --unit
 
 # Integration tests only
-python run_tests.py --integration
+python3 run_tests.py --integration
 
 # Tests with coverage report
-python run_tests.py --coverage
+python3 run_tests.py --coverage
 
-# Code quality checks
-python run_tests.py --lint
-
-# All tests and quality checks
-python run_tests.py --all
+# Code quality checks (linting)
+python3 run_tests.py --lint
 ```
 
-**Direct pytest usage:**
+**Direct `pytest` usage:**
 ```bash
-# Run all tests
-python -m pytest test_deploy.py -v
+# Run all tests with verbose output
+pytest -v
 
-# Run with coverage
-python -m pytest test_deploy.py --cov=deploy --cov-report=html
+# Run with coverage report
+pytest --cov=deploy --cov-report=html
 ```
 
 ### Test Coverage

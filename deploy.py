@@ -16,9 +16,21 @@ import configparser
 from pathlib import Path
 import ansible_runner
 
-from lib.common import run_command, print_status, print_header, print_error, show_help, print_ansible, \
-    check_command_exists, TERRAFORM_DIR
-from lib.prereq import check_prerequisites, validate_tfvars_file, get_validated_vars, setup_ssh_keys
+from lib.common import (
+    run_command,
+    print_status,
+    print_header,
+    print_error,
+    print_ansible,
+    check_command_exists,
+    TERRAFORM_DIR,
+)
+from lib.prereq import (
+    check_prerequisites,
+    validate_tfvars_file,
+    get_validated_vars,
+    setup_ssh_keys,
+)
 from lib.terraform import run_terraform_workflow
 
 
@@ -38,21 +50,23 @@ def load_config(config_file="deploy.config"):
     """
     # Default configuration values
     config = {
-        "force_redeploy": False,      # Force redeployment even if already deployed
-        "continue_if_deployed": False, # Continue if deployment already exists
-        "skip_nat": False,            # Skip NAT configuration
-        "skip_ansible": False,        # Skip all Ansible playbooks
-        "no_vm_update": False,        # Skip VM configuration
-        "no_k3s": False,              # Skip K3s installation
-        "no_docker": False,           # Skip Docker installation
-        "no_openfaas": False,         # Skip OpenFaaS installation
-        "destroy": True,             # Destroy infrastructure
-        "workspace": "",              # Terraform workspace
-        "auto_approve": True,        # Auto-approve Terraform changes
+        "force_redeploy": False,  # Force redeployment even if already deployed
+        "continue_if_deployed": False,  # Continue if deployment already exists
+        "skip_nat": False,  # Skip NAT configuration
+        "skip_ansible": False,  # Skip all Ansible playbooks
+        "no_vm_update": False,  # Skip VM configuration
+        "no_k3s": False,  # Skip K3s installation
+        "no_docker": False,  # Skip Docker installation
+        "no_openfaas": False,  # Skip OpenFaaS installation
+        "destroy": True,  # Destroy infrastructure
+        "workspace": "",  # Terraform workspace
+        "auto_approve": True,  # Auto-approve Terraform changes
     }
 
     if not os.path.exists(config_file):
-        print_status(f"Configuration file '{config_file}' not found, using default values")
+        print_status(
+            f"Configuration file '{config_file}' not found, using default values"
+        )
         return config
 
     print_status(f"Loading configuration from '{config_file}'")
@@ -210,7 +224,7 @@ def main():
     """
     Main entry point for the Proxmox stack deployment script.
 
-    This function orchestrates the entire deployment or destruction process based on 
+    This function orchestrates the entire deployment or destruction process based on
     the provided arguments. It handles:
     1. Infrastructure destruction if --destroy is specified
     2. Initial setup and validation
@@ -261,7 +275,9 @@ def main():
         # Install OpenFaaS
         if not args.no_openfaas:
             if not run_ansible_openfaas_installation():
-                print_error("OpenFaaS installation failed. Continuing with deployment...")
+                print_error(
+                    "OpenFaaS installation failed. Continuing with deployment..."
+                )
 
     print_status("Deployment completed successfully")
 
@@ -275,8 +291,8 @@ def run_ansible_destroy():
     """
     return run_ansible_playbook(
         "NAT rule removal",
-        './playbooks/remove_nat_rules.yml',
-        './inventories/inventory-nat-rules.ini'
+        "./playbooks/remove_nat_rules.yml",
+        "./inventories/inventory-nat-rules.ini",
     )
 
 
@@ -289,12 +305,20 @@ def run_terraform_destroy():
     if check_command_exists("tofu"):
         tf_cmd = "tofu"
         tf_version_result = run_command(f"{tf_cmd} version", capture_output=True)
-        tf_version = tf_version_result.stdout.splitlines()[0] if tf_version_result.stdout else "Unknown version"
+        tf_version = (
+            tf_version_result.stdout.splitlines()[0]
+            if tf_version_result.stdout
+            else "Unknown version"
+        )
         print_status(f"Using OpenTofu: {tf_version}")
     else:
         tf_cmd = "terraform"
         tf_version_result = run_command(f"{tf_cmd} version", capture_output=True)
-        tf_version = tf_version_result.stdout.splitlines()[0] if tf_version_result.stdout else "Unknown version"
+        tf_version = (
+            tf_version_result.stdout.splitlines()[0]
+            if tf_version_result.stdout
+            else "Unknown version"
+        )
         print_status(f"Using Terraform: {tf_version}")
 
     print_status(f"Performing {tf_cmd} destroy")
@@ -340,7 +364,9 @@ def run_terraform_deploy(args):
     # Set AUTO_APPROVE environment variable based on args
     if args.auto_approve:
         os.environ["AUTO_APPROVE"] = "true"
-        print_status("Auto-approve enabled: Terraform changes will be applied automatically")
+        print_status(
+            "Auto-approve enabled: Terraform changes will be applied automatically"
+        )
 
     run_terraform_workflow()
 
@@ -359,7 +385,7 @@ def run_ansible_playbook(operation_name, playbook_path, inventory_path):
     """
     print_status(f"Running Ansible {operation_name}")
     print_ansible(f"Using ansible_runner for {operation_name}")
-    print_ansible(f'Current directory: {os.getcwd()}')
+    print_ansible(f"Current directory: {os.getcwd()}")
 
     # Save current directory and change to script directory
     original_cwd = os.getcwd()
@@ -367,7 +393,7 @@ def run_ansible_playbook(operation_name, playbook_path, inventory_path):
 
     try:
         os.chdir(script_dir)
-        print_ansible(f'Changed to script directory: {script_dir}')
+        print_ansible(f"Changed to script directory: {script_dir}")
 
         # Check if files exist
         if not os.path.exists(playbook_path):
@@ -382,15 +408,15 @@ def run_ansible_playbook(operation_name, playbook_path, inventory_path):
 
         # Run the playbook using ansible_runner
         result = ansible_runner.run(
-            private_data_dir='./',
+            private_data_dir="./",
             playbook=os.path.abspath(playbook_path),
             inventory=os.path.abspath(inventory_path),
             quiet=False,
-            verbosity=1
+            verbosity=1,
         )
 
         # Check result status (more robust than just checking rc)
-        if result.status == 'successful':
+        if result.status == "successful":
             print_status(f"Ansible {operation_name} completed successfully")
             print_ansible(f"Playbook executed with return code: {result.rc}")
             return True
@@ -399,11 +425,17 @@ def run_ansible_playbook(operation_name, playbook_path, inventory_path):
             print_error(f"Return code: {result.rc}")
 
             # Show error details if available
-            if hasattr(result, 'events'):
+            if hasattr(result, "events"):
                 for event in result.events:
-                    if event.get('event') == 'runner_on_failed':
-                        task_name = event.get('event_data', {}).get('task', 'Unknown task')
-                        error_msg = event.get('event_data', {}).get('res', {}).get('msg', 'Unknown error')
+                    if event.get("event") == "runner_on_failed":
+                        task_name = event.get("event_data", {}).get(
+                            "task", "Unknown task"
+                        )
+                        error_msg = (
+                            event.get("event_data", {})
+                            .get("res", {})
+                            .get("msg", "Unknown error")
+                        )
                         print_error(f"Failed task: {task_name}")
                         print_error(f"Error: {error_msg}")
 
@@ -419,12 +451,13 @@ def run_ansible_playbook(operation_name, playbook_path, inventory_path):
         print_error(f"Unexpected exception during Ansible execution: {str(e)}")
         # Print full traceback for debugging
         import traceback
+
         print_error(f"Traceback: {traceback.format_exc()}")
         return False
     finally:
         # Always restore original directory
         os.chdir(original_cwd)
-        print_ansible(f'Restored original directory: {original_cwd}')
+        print_ansible(f"Restored original directory: {original_cwd}")
 
 
 def run_ansible_nat_configuration():
@@ -435,8 +468,8 @@ def run_ansible_nat_configuration():
     """
     return run_ansible_playbook(
         "NAT configuration",
-        './playbooks/add_nat_rules.yml',
-        './inventories/inventory-nat-rules.ini'
+        "./playbooks/add_nat_rules.yml",
+        "./inventories/inventory-nat-rules.ini",
     )
 
 
@@ -449,8 +482,8 @@ def run_ansible_vm_configuration():
     """
     return run_ansible_playbook(
         "VM configuration",
-        './playbooks/configure-vms.yml',
-        './inventories/inventory_updates.ini'
+        "./playbooks/configure-vms.yml",
+        "./inventories/inventory_updates.ini",
     )
 
 
@@ -463,8 +496,8 @@ def run_ansible_k3s_installation():
     """
     return run_ansible_playbook(
         "K3s installation",
-        './playbooks/k3s_install.yml',
-        './inventories/inventory_updates.ini'
+        "./playbooks/k3s_install.yml",
+        "./inventories/inventory_updates.ini",
     )
 
 
@@ -477,8 +510,8 @@ def run_ansible_docker_installation():
     """
     return run_ansible_playbook(
         "Docker installation",
-        './playbooks/docker_install.yml',
-        './inventories/inventory_updates.ini'
+        "./playbooks/docker_install.yml",
+        "./inventories/inventory_updates.ini",
     )
 
 
@@ -491,8 +524,8 @@ def run_ansible_openfaas_installation():
     """
     return run_ansible_playbook(
         "OpenFaaS installation",
-        './playbooks/install_openfaas.yml',
-        './inventories/inventory_updates.ini'
+        "./playbooks/install_openfaas.yml",
+        "./inventories/inventory_updates.ini",
     )
 
 
