@@ -134,7 +134,7 @@ class TestDeploymentFunctions(unittest.TestCase):
         mock_args = MagicMock()
         deploy.run_initial_setup_and_validation_tasks(mock_args)
 
-        mock_run_command.assert_called_once_with("./lib/prereq.sh")
+        mock_run_command.assert_called_once_with("python ./lib/prereq.py")
 
     @patch("deploy.run_command")
     def test_run_terraform_deploy_no_workspace(self, mock_run_command):
@@ -402,7 +402,7 @@ class TestIntegration(unittest.TestCase):
 
         # Verify that all deployment commands were called
         expected_commands = [
-            "./lib/prereq.sh",
+            "python ./lib/prereq.py",
             "terraform apply -auto-approve",
             "ansible-playbook -i ./inventories/inventory-nat-rules.ini ./playbooks/add_nat_rules.yml",
             "ansible-playbook -i ./inventories/inventory_updates.ini ./playbooks/configure-vms.yml",

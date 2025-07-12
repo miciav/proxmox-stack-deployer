@@ -237,7 +237,7 @@ output "vm_nodes" {
 
 # Output for VM roles
 output "vm_roles" {
-  value = local.vm_roles_resolved
+  value       = local.vm_roles_resolved
   description = "Resolved roles for each VM"
 }
 
