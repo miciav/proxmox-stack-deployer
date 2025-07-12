@@ -20,6 +20,7 @@
       ansible.builtin.shell: |
         helm repo add openfaas https://openfaas.github.io/faas-netes/
       register: helm_repo_add
+      failed_when: helm_repo_add.rc != 0 and 'already exists' not in helm_repo_add.stderr
       changed_when: "'already exists' not in helm_repo_add.stderr"
 
     - name: Update Helm repositories
@@ -34,6 +35,12 @@
       register: openfaas_check
       failed_when: false
       changed_when: false
+
+    - name: Create OpenFaaS function namespace
+      ansible.builtin.shell: |
+        kubectl create namespace openfaas-fn --dry-run=client -o yaml | kubectl apply -f -
+      register: openfaas_fn_namespace
+      when: openfaas_check.rc != 0
 
     - name: Install OpenFaaS
       ansible.builtin.shell: |
@@ -50,11 +57,19 @@
       register: openfaas_install
       when: openfaas_check.rc != 0
 
+    - name: Wait for OpenFaaS to be ready
+      ansible.builtin.shell: |
+        kubectl wait --for=condition=ready pod -l app=gateway -n openfaas --timeout=300s
+      register: openfaas_wait
+      when: openfaas_install.changed
+      failed_when: false
+
     - name: Get OpenFaaS admin password
       ansible.builtin.shell: |
         kubectl get secret -n openfaas basic-auth -o jsonpath="{.data.basic-auth-password}" | base64 --decode
       register: openfaas_password
       when: openfaas_install.changed or openfaas_check.rc == 0
+      failed_when: false
 
     - name: Display OpenFaaS installation info
       ansible.builtin.debug:
@@ -62,7 +77,7 @@
           OpenFaaS has been installed successfully!
           Gateway URL: http://{{ ansible_host }}:31112
           Username: admin
-          Password: {{ openfaas_password.stdout }}
+          Password: {{ openfaas_password.stdout if openfaas_password.stdout is defined else 'Password retrieval failed - check manually' }}
           
           To access OpenFaaS from your local machine:
           kubectl port-forward -n openfaas svc/gateway 8080:8080

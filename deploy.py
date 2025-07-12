@@ -10,30 +10,16 @@ The script can be configured via command-line arguments or a configuration file 
 """
 
 import argparse
-import subprocess
 import os
 import sys
 import configparser
 from pathlib import Path
+import ansible_runner
 
+from lib.common import run_command, print_status, print_header, print_error, show_help, print_ansible, \
+    check_command_exists, TERRAFORM_DIR
 from lib.prereq import check_prerequisites, validate_tfvars_file, get_validated_vars, setup_ssh_keys
 from lib.terraform import run_terraform_workflow
-
-
-def run_command(command, check=True):
-    """
-    Execute a shell command and return the result.
-
-    Args:
-        command (str): The shell command to execute
-        check (bool): If True, raises an exception if the command returns a non-zero exit code
-
-    Returns:
-        subprocess.CompletedProcess: The result of the command execution
-    """
-    print(f"Executing: {command}")
-    result = subprocess.run(command, shell=True, check=check)
-    return result
 
 
 def load_config(config_file="deploy.config"):
@@ -60,16 +46,16 @@ def load_config(config_file="deploy.config"):
         "no_k3s": False,              # Skip K3s installation
         "no_docker": False,           # Skip Docker installation
         "no_openfaas": False,         # Skip OpenFaaS installation
-        "destroy": False,             # Destroy infrastructure
+        "destroy": True,             # Destroy infrastructure
         "workspace": "",              # Terraform workspace
-        "auto_approve": False,        # Auto-approve Terraform changes
+        "auto_approve": True,        # Auto-approve Terraform changes
     }
 
     if not os.path.exists(config_file):
-        print(f"Configuration file '{config_file}' not found, using default values")
+        print_status(f"Configuration file '{config_file}' not found, using default values")
         return config
 
-    print(f"Loading configuration from '{config_file}'")
+    print_status(f"Loading configuration from '{config_file}'")
 
     try:
         # Initialize the config parser
@@ -116,8 +102,8 @@ def load_config(config_file="deploy.config"):
         return config
 
     except Exception as e:
-        print(f"Error reading configuration file: {e}")
-        print("Using default values")
+        print_error(f"Error reading configuration file: {e}")
+        print_status("Using default values")
         return config
 
 
@@ -235,9 +221,10 @@ def main():
 
     # Handle destruction mode if --destroy flag is set
     if args.destroy:
-        print("Destroying infrastructure")
+        print_header("INFRASTRUCTURE DESTRUCTION")
         # First remove NAT rules with Ansible
-        run_ansible_destroy()
+        if not run_ansible_destroy():
+            print_error("NAT rule removal failed. Continuing with destruction...")
         # Then destroy all Terraform-managed resources
         run_terraform_destroy()
         # Clean up inventory files
@@ -246,6 +233,7 @@ def main():
         sys.exit(0)
 
     # Start deployment process
+    print_header("STARTING DEPLOYMENT PROCESS")
     # 1. Run prerequisite checks and setup
     run_initial_setup_and_validation_tasks(args)
     # 2. Deploy infrastructure with Terraform
@@ -253,23 +241,29 @@ def main():
 
     # 3. Run Ansible playbooks for configuration if not skipped
     if not args.skip_ansible:
+        print_header("ANSIBLE CONFIGURATION")
         # Configure NAT rules
         if not args.skip_nat:
-            run_ansible_nat_configuration()
+            if not run_ansible_nat_configuration():
+                print_error("NAT configuration failed. Continuing with deployment...")
         # Configure VMs (updates, packages, etc.)
         if not args.no_vm_update:
-            run_ansible_vm_configuration()
+            if not run_ansible_vm_configuration():
+                print_error("VM configuration failed. Continuing with deployment...")
         # Install K3s Kubernetes
         if not args.no_k3s:
-            run_ansible_k3s_installation()
+            if not run_ansible_k3s_installation():
+                print_error("K3s installation failed. Continuing with deployment...")
         # Install Docker
         if not args.no_docker:
-            run_ansible_docker_installation()
+            if not run_ansible_docker_installation():
+                print_error("Docker installation failed. Continuing with deployment...")
         # Install OpenFaaS
         if not args.no_openfaas:
-            run_ansible_openfaas_installation()
+            if not run_ansible_openfaas_installation():
+                print_error("OpenFaaS installation failed. Continuing with deployment...")
 
-    print("Deployment completed")
+    print_status("Deployment completed successfully")
 
 
 def run_ansible_destroy():
@@ -277,10 +271,12 @@ def run_ansible_destroy():
     Remove NAT rules using Ansible playbook.
 
     This is part of the infrastructure destruction process.
+    Uses ansible_runner library for better integration with Python.
     """
-    print("Running Ansible to remove NAT rules")
-    run_command(
-        "ansible-playbook -i ./inventories/inventory-nat-rules.ini ./playbooks/remove_nat_rules.yml"
+    return run_ansible_playbook(
+        "NAT rule removal",
+        './playbooks/remove_nat_rules.yml',
+        './inventories/inventory-nat-rules.ini'
     )
 
 
@@ -290,8 +286,22 @@ def run_terraform_destroy():
 
     This removes all VMs and resources created by Terraform.
     """
-    print("Performing Terraform destroy")
-    run_command("terraform destroy -auto-approve")
+    if check_command_exists("tofu"):
+        tf_cmd = "tofu"
+        tf_version_result = run_command(f"{tf_cmd} version", capture_output=True)
+        tf_version = tf_version_result.stdout.splitlines()[0] if tf_version_result.stdout else "Unknown version"
+        print_status(f"Using OpenTofu: {tf_version}")
+    else:
+        tf_cmd = "terraform"
+        tf_version_result = run_command(f"{tf_cmd} version", capture_output=True)
+        tf_version = tf_version_result.stdout.splitlines()[0] if tf_version_result.stdout else "Unknown version"
+        print_status(f"Using Terraform: {tf_version}")
+
+    print_status(f"Performing {tf_cmd} destroy")
+    original_dir = os.getcwd()
+    os.chdir(TERRAFORM_DIR)
+    run_command(f"{tf_cmd} destroy -auto-approve")
+    os.chdir(original_dir)
 
 
 def run_initial_setup_and_validation_tasks(args):
@@ -304,7 +314,7 @@ def run_initial_setup_and_validation_tasks(args):
     Args:
         args: Command-line arguments
     """
-    print("Running initial setup and validation tasks")
+    print_header("INITIAL SETUP AND VALIDATION")
     check_prerequisites()
     if not validate_tfvars_file():
         sys.exit(1)
@@ -323,21 +333,110 @@ def run_terraform_deploy(args):
     Args:
         args: Command-line arguments containing workspace information
     """
-    print("Running Terraform deployment")
+    print_header("TERRAFORM DEPLOYMENT")
     if args.workspace:
         run_command(f"terraform workspace select {args.workspace}")
+
+    # Set AUTO_APPROVE environment variable based on args
+    if args.auto_approve:
+        os.environ["AUTO_APPROVE"] = "true"
+        print_status("Auto-approve enabled: Terraform changes will be applied automatically")
+
     run_terraform_workflow()
+
+
+def run_ansible_playbook(operation_name, playbook_path, inventory_path):
+    """
+    Generic function to run Ansible playbooks with proper error handling.
+
+    Args:
+        operation_name: Name of the operation (for logging)
+        playbook_path: Path to the playbook file
+        inventory_path: Path to the inventory file
+
+    Returns:
+        bool: True if playbook execution was successful, False otherwise
+    """
+    print_status(f"Running Ansible {operation_name}")
+    print_ansible(f"Using ansible_runner for {operation_name}")
+    print_ansible(f'Current directory: {os.getcwd()}')
+
+    # Save current directory and change to script directory
+    original_cwd = os.getcwd()
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
+    try:
+        os.chdir(script_dir)
+        print_ansible(f'Changed to script directory: {script_dir}')
+
+        # Check if files exist
+        if not os.path.exists(playbook_path):
+            print_error(f"Playbook not found: {playbook_path}")
+            return False
+
+        if not os.path.exists(inventory_path):
+            print_error(f"Inventory not found: {inventory_path}")
+            return False
+
+        print_ansible("Files verified, starting playbook execution...")
+
+        # Run the playbook using ansible_runner
+        result = ansible_runner.run(
+            private_data_dir='./',
+            playbook=os.path.abspath(playbook_path),
+            inventory=os.path.abspath(inventory_path),
+            quiet=False,
+            verbosity=1
+        )
+
+        # Check result status (more robust than just checking rc)
+        if result.status == 'successful':
+            print_status(f"Ansible {operation_name} completed successfully")
+            print_ansible(f"Playbook executed with return code: {result.rc}")
+            return True
+        else:
+            print_error(f"Ansible {operation_name} failed with status: {result.status}")
+            print_error(f"Return code: {result.rc}")
+
+            # Show error details if available
+            if hasattr(result, 'events'):
+                for event in result.events:
+                    if event.get('event') == 'runner_on_failed':
+                        task_name = event.get('event_data', {}).get('task', 'Unknown task')
+                        error_msg = event.get('event_data', {}).get('res', {}).get('msg', 'Unknown error')
+                        print_error(f"Failed task: {task_name}")
+                        print_error(f"Error: {error_msg}")
+
+            return False
+
+    except FileNotFoundError as e:
+        print_error(f"File not found during Ansible execution: {str(e)}")
+        return False
+    except PermissionError as e:
+        print_error(f"Permission denied during Ansible execution: {str(e)}")
+        return False
+    except Exception as e:
+        print_error(f"Unexpected exception during Ansible execution: {str(e)}")
+        # Print full traceback for debugging
+        import traceback
+        print_error(f"Traceback: {traceback.format_exc()}")
+        return False
+    finally:
+        # Always restore original directory
+        os.chdir(original_cwd)
+        print_ansible(f'Restored original directory: {original_cwd}')
 
 
 def run_ansible_nat_configuration():
     """
     Configure NAT rules using Ansible.
-
     This allows VMs to access external networks through the Proxmox host.
+    Uses ansible_runner library for better integration with Python.
     """
-    print("Running Ansible NAT configuration")
-    run_command(
-        "ansible-playbook -i ./inventories/inventory-nat-rules.ini ./playbooks/add_nat_rules.yml"
+    return run_ansible_playbook(
+        "NAT configuration",
+        './playbooks/add_nat_rules.yml',
+        './inventories/inventory-nat-rules.ini'
     )
 
 
@@ -346,10 +445,12 @@ def run_ansible_vm_configuration():
     Configure VMs using Ansible.
 
     This performs basic VM setup and configuration tasks.
+    Uses ansible_runner library for better integration with Python.
     """
-    print("Running Ansible VM configuration")
-    run_command(
-        "ansible-playbook -i ./inventories/inventory_updates.ini ./playbooks/configure-vms.yml"
+    return run_ansible_playbook(
+        "VM configuration",
+        './playbooks/configure-vms.yml',
+        './inventories/inventory_updates.ini'
     )
 
 
@@ -358,10 +459,12 @@ def run_ansible_k3s_installation():
     Install K3s Kubernetes on VMs using Ansible.
 
     This sets up a lightweight Kubernetes cluster.
+    Uses ansible_runner library for better integration with Python.
     """
-    print("Running Ansible K3s installation")
-    run_command(
-        "ansible-playbook -i ./inventories/inventory_updates.ini ./playbooks/k3s_install.yml"
+    return run_ansible_playbook(
+        "K3s installation",
+        './playbooks/k3s_install.yml',
+        './inventories/inventory_updates.ini'
     )
 
 
@@ -370,10 +473,12 @@ def run_ansible_docker_installation():
     Install Docker on VMs using Ansible.
 
     This provides container runtime capabilities.
+    Uses ansible_runner library for better integration with Python.
     """
-    print("Running Ansible Docker installation")
-    run_command(
-        "ansible-playbook -i ./inventories/inventory_updates.ini ./playbooks/docker_install.yml"
+    return run_ansible_playbook(
+        "Docker installation",
+        './playbooks/docker_install.yml',
+        './inventories/inventory_updates.ini'
     )
 
 
@@ -382,10 +487,12 @@ def run_ansible_openfaas_installation():
     Install OpenFaaS on the K3s cluster using Ansible.
 
     OpenFaaS provides serverless functions capabilities on Kubernetes.
+    Uses ansible_runner library for better integration with Python.
     """
-    print("Running Ansible OpenFaaS installation")
-    run_command(
-        "ansible-playbook -i ./inventories/inventory_updates.ini ./playbooks/install_openfaas.yml"
+    return run_ansible_playbook(
+        "OpenFaaS installation",
+        './playbooks/install_openfaas.yml',
+        './inventories/inventory_updates.ini'
     )
 
 

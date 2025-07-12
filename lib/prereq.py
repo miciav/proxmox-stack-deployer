@@ -9,96 +9,22 @@ environment variables needed for deployment.
 
 import os
 import sys
-import subprocess
 import re
-import logging
 from pathlib import Path
 from datetime import datetime
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.backends import default_backend
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(f"logs/deployment_{os.popen('date +%Y%m%d_%H%M%S').read().strip()}.log")
-    ]
+# Import common functions and variables
+from lib.common import (
+    print_status, print_success, print_warning, print_error, print_header,
+    print_ansible, print_nat, print_debug, check_command_exists, run_command,
+    PLAN_FILE, PLAYBOOK_FILE1, PLAYBOOK_FILE2, PLAYBOOK_FILE3, TERRAFORM_DIR,
+    SSH_KEY_PATH, PROXMOX_HOST, PROXMOX_USER, PROXMOX_SSH_KEY,
+    EXTERNAL_INTERFACE, INTERNAL_INTERFACE, NAT_START_PORT, K3S_API_PORT,
+    DEBUG
 )
-logger = logging.getLogger(__name__)
-
-# ANSI color codes for output formatting
-RED = '\033[0;31m'
-GREEN = '\033[0;32m'
-YELLOW = '\033[1;33m'
-BLUE = '\033[0;34m'
-PURPLE = '\033[0;35m'
-CYAN = '\033[0;36m'
-NC = '\033[0m'  # No Color
-
-# Global configuration
-PLAN_FILE = "tfplan"
-PLAYBOOK_FILE1 = "playbooks/configure-vms.yml"
-PLAYBOOK_FILE2 = "playbooks/add_nat_rules.yml"
-PLAYBOOK_FILE3 = "playbooks/k3s_install.yml"
-TERRAFORM_DIR = "terraform-opentofu"
-SSH_KEY_PATH = os.path.expanduser("~/.ssh/id_rsa")
-
-# Remote Proxmox configuration
-PROXMOX_HOST = os.environ.get("PROXMOX_HOST", "")
-PROXMOX_USER = os.environ.get("PROXMOX_USER", "root")
-PROXMOX_SSH_KEY = os.environ.get("PROXMOX_SSH_KEY", SSH_KEY_PATH)
-EXTERNAL_INTERFACE = os.environ.get("EXTERNAL_INTERFACE", "vmbr0")
-INTERNAL_INTERFACE = os.environ.get("INTERNAL_INTERFACE", "vmbr1")
-NAT_START_PORT = os.environ.get("NAT_START_PORT", "20000")
-K3S_API_PORT = os.environ.get("K3S_API_PORT", "6443")
-
-# Debug mode
-DEBUG = os.environ.get("DEBUG", "false").lower() == "true"
-
-# Output functions
-def print_status(message):
-    """Print an informational status message."""
-    logger.info(f"{GREEN}[INFO]{NC} {message}")
-
-def print_success(message):
-    """Print a success message."""
-    logger.info(f"{GREEN}[SUCCESS]{NC} {message}")
-
-def print_warning(message):
-    """Print a warning message."""
-    logger.warning(f"{YELLOW}[WARNING]{NC} {message}")
-
-def print_error(message):
-    """Print an error message."""
-    logger.error(f"{RED}[ERROR]{NC} {message}")
-
-def print_header(message):
-    """Print a section header."""
-    logger.info(f"{BLUE}=== {message} ==={NC}")
-
-def print_ansible(message):
-    """Print an Ansible-related message."""
-    logger.info(f"{CYAN}[ANSIBLE]{NC} {message}")
-
-def print_nat(message):
-    """Print a NAT-related message."""
-    logger.info(f"{PURPLE}[NAT]{NC} {message}")
-
-def print_debug(message):
-    """Print a debug message if DEBUG is enabled."""
-    if DEBUG:
-        logger.debug(f"{PURPLE}[DEBUG]{NC} {message}")
-
-def check_command_exists(command):
-    """Check if a command exists in the system PATH."""
-    try:
-        subprocess.run(["which", command], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        return True
-    except subprocess.CalledProcessError:
-        return False
 
 def check_prerequisites():
     """

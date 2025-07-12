@@ -9,114 +9,15 @@ planning, and applying infrastructure changes.
 
 import os
 import sys
-import subprocess
 import json
-import logging
-import shutil
-import atexit
 from pathlib import Path
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(f"logs/deployment_{os.popen('date +%Y%m%d_%H%M%S').read().strip()}.log")
-    ]
+# Import common functions and variables
+from lib.common import (
+    print_status, print_success, print_warning, print_error, print_header,
+    print_debug, check_command_exists, run_command, cleanup,
+    PLAN_FILE, TERRAFORM_DIR, DEBUG
 )
-logger = logging.getLogger(__name__)
-
-# ANSI color codes for output formatting
-RED = '\033[0;31m'
-GREEN = '\033[0;32m'
-YELLOW = '\033[1;33m'
-BLUE = '\033[0;34m'
-PURPLE = '\033[0;35m'
-CYAN = '\033[0;36m'
-NC = '\033[0m'  # No Color
-
-# Global configuration
-PLAN_FILE = "tfplan"
-TERRAFORM_DIR = "terraform-opentofu"
-
-# Debug mode
-DEBUG = os.environ.get("DEBUG", "false").lower() == "true"
-
-# Cleanup function
-def cleanup():
-    """
-    Clean up temporary files and resources.
-
-    This function is registered with atexit to ensure it runs when the script exits.
-    """
-    plan_file_path = Path(TERRAFORM_DIR) / PLAN_FILE
-    if plan_file_path.exists():
-        try:
-            plan_file_path.unlink()
-            print_debug(f"Removed temporary plan file: {plan_file_path}")
-        except Exception as e:
-            print_debug(f"Error removing plan file: {e}")
-
-# Register cleanup function
-atexit.register(cleanup)
-
-# Output functions
-def print_status(message):
-    """Print an informational status message."""
-    logger.info(f"{GREEN}[INFO]{NC} {message}")
-
-def print_success(message):
-    """Print a success message."""
-    logger.info(f"{GREEN}[SUCCESS]{NC} {message}")
-
-def print_warning(message):
-    """Print a warning message."""
-    logger.warning(f"{YELLOW}[WARNING]{NC} {message}")
-
-def print_error(message):
-    """Print an error message."""
-    logger.error(f"{RED}[ERROR]{NC} {message}")
-
-def print_header(message):
-    """Print a section header."""
-    logger.info(f"{BLUE}=== {message} ==={NC}")
-
-def print_debug(message):
-    """Print a debug message if DEBUG is enabled."""
-    if DEBUG:
-        logger.debug(f"{PURPLE}[DEBUG]{NC} {message}")
-
-def run_command(command, check=True, capture_output=False):
-    """
-    Execute a shell command and return the result.
-
-    Args:
-        command (str): The shell command to execute
-        check (bool): If True, raises an exception if the command returns a non-zero exit code
-        capture_output (bool): If True, captures and returns stdout and stderr
-
-    Returns:
-        subprocess.CompletedProcess: The result of the command execution
-    """
-    print_debug(f"Executing: {command}")
-
-    if capture_output:
-        result = subprocess.run(command, shell=True, check=check, 
-                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
-                               text=True)
-    else:
-        result = subprocess.run(command, shell=True, check=check)
-
-    return result
-
-def check_command_exists(command):
-    """Check if a command exists in the system PATH."""
-    try:
-        subprocess.run(["which", command], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        return True
-    except subprocess.CalledProcessError:
-        return False
 
 def run_terraform_workflow():
     """
