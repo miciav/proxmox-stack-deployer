@@ -4,6 +4,22 @@
     <exclude-output />
     <content url="file://$MODULE_DIR$">
       <excludeFolder url="file://$MODULE_DIR$/.venv" />
+      <excludeFolder url="file://$MODULE_DIR$/artifacts/02d4a2c5-e173-4d08-a461-aa239c1f4e81/fact_cache" />
+      <excludeFolder url="file://$MODULE_DIR$/artifacts/0486c33a-5282-46dc-8e47-3771f4ab2469/fact_cache" />
+      <excludeFolder url="file://$MODULE_DIR$/artifacts/0f2522b4-b611-4145-a986-d0f355bb773f/fact_cache" />
+      <excludeFolder url="file://$MODULE_DIR$/artifacts/21cbf8ec-be50-4198-b32f-68791bb0e39d/fact_cache" />
+      <excludeFolder url="file://$MODULE_DIR$/artifacts/7497aa14-9d99-4ac6-aa00-271c548e8d4b/fact_cache" />
+      <excludeFolder url="file://$MODULE_DIR$/artifacts/9e241468-78ad-41be-ae62-ab77df81e1f8/fact_cache" />
+      <excludeFolder url="file://$MODULE_DIR$/artifacts/a124fa9a-6c1f-4e42-ade7-ac0ee799ca89/fact_cache" />
+      <excludeFolder url="file://$MODULE_DIR$/artifacts/b8771795-c934-436c-95b8-badabbfc0749/fact_cache" />
+      <excludeFolder url="file://$MODULE_DIR$/artifacts/ba146220-fc89-4588-b5ea-fc7779bc24f6/fact_cache" />
+      <excludeFolder url="file://$MODULE_DIR$/artifacts/bc6a5060-2878-4de5-9d4f-b0acab5d07b1/fact_cache" />
+      <excludeFolder url="file://$MODULE_DIR$/artifacts/c4c91a4c-3748-4150-b8de-8df4e2aca920/fact_cache" />
+      <excludeFolder url="file://$MODULE_DIR$/artifacts/d81ea1f6-4fe5-4541-bc29-1d897715e384/fact_cache" />
+      <excludeFolder url="file://$MODULE_DIR$/artifacts/e0a80ea9-f0b2-4c96-b14b-ed2f87950d38/fact_cache" />
+      <excludeFolder url="file://$MODULE_DIR$/artifacts/f065591c-63cb-4711-a6cd-f48987b9c13c/fact_cache" />
+      <excludeFolder url="file://$MODULE_DIR$/artifacts/f58e9a38-871e-4dc2-9d1f-af8be15a057d/fact_cache" />
+      <excludeFolder url="file://$MODULE_DIR$/terraform-opentofu/.terraform" />
     </content>
     <orderEntry type="jdk" jdkName="Python 3.13 (proxmox-stack-deployer)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
