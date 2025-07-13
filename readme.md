@@ -1,5 +1,6 @@
 [![Test Deploy.py](https://github.com/miciav/proxmox-stack-deployer/workflows/Test%20Deploy.py/badge.svg)](https://github.com/miciav/proxmox-stack-deployer/actions)
 [![codecov](https://codecov.io/gh/miciav/proxmox-stack-deployer/branch/main/graph/badge.svg)](https://codecov.io/gh/miciav/proxmox-stack-deployer)
+[![Latest Release](https://img.shields.io/github/v/release/miciav/proxmox-stack-deployer)](https://github.com/miciav/proxmox-stack-deployer/releases/latest)
 [![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![OpenTofu](https://img.shields.io/badge/OpenTofu-1.6+-purple.svg)](https://opentofu.org/)
