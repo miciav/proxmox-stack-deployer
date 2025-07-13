@@ -8,6 +8,9 @@ ansible-runner>=2.3.1
 types-cryptography>=3.3.23.2
 types-requests>=2.32.0
 
+# Terraform integration
+cryptography>=45.0.5
+
 # Development dependencies
 black>=22.0.0
 flake8>=5.0.0
