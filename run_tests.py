@@ -36,10 +36,14 @@ def run_command(cmd, description=""):
 
 def run_unit_tests():
     """Run only unit tests"""
-    cmd = ["python", "-m", "pytest", "test_deploy.py::TestArgumentParsing", 
-           "test_deploy.py::TestCommandExecution", "test_deploy.py::TestDeploymentFunctions",
-           "test_deploy.py::TestMainFunction", "test_deploy.py::TestErrorHandling",
-           "test_deploy.py::TestUtilities", "-v"]
+    cmd = ["python", "-m", "pytest",
+           "test_deploy.py::TestArgumentParsing",
+           "test_deploy.py::TestCommandExecution",
+           "test_deploy.py::TestDeploymentFunctions",
+           "test_deploy.py::TestMainFunction",
+           "test_deploy.py::TestErrorHandling",
+           "test_deploy.py::TestUtilities",
+           "-v"]
     return run_command(cmd, "Unit Tests")
 
 
@@ -57,8 +61,12 @@ def run_all_tests():
 
 def run_coverage():
     """Run tests with coverage report"""
-    cmd = ["python", "-m", "pytest", "test_deploy.py", "--cov=deploy", 
-           "--cov-report=html", "--cov-report=term-missing", "-v"]
+    cmd = ["python", "-m", "pytest",
+           "test_deploy.py",
+           "--cov=deploy",
+           "--cov-report=html",
+           "--cov-report=term-missing",
+           "-v"]
     return run_command(cmd, "Coverage Report")
 
 

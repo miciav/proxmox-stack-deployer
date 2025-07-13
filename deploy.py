@@ -2,18 +2,20 @@
 """
 Proxmox Stack Deployer
 
-This script automates the deployment and management of a Proxmox-based infrastructure stack.
-It orchestrates the creation and configuration of VMs using Terraform and Ansible,
+This script automates the deployment and management of a Proxmox-based
+infrastructure stack.
+It orchestrates the creation and configuration of VMs using Terraform
+and Ansible,
 with support for K3s, Docker, and OpenFaaS installations.
 
-The script can be configured via command-line arguments or a configuration file (deploy.config).
+The script can be configured via command-line arguments or a configuration
+file (deploy.config).
 """
 
 import argparse
 import os
 import sys
 import configparser
-from pathlib import Path
 import ansible_runner
 
 from lib.common import (
@@ -36,14 +38,16 @@ from lib.terraform import run_terraform_workflow
 
 def load_config(config_file="deploy.config"):
     """
-    Load configuration from INI file, return default values if file doesn't exist.
+    Load configuration from INI file, return default values if file
+    doesn't exist.
 
-    This function reads deployment configuration from an INI file and converts
-    the values to appropriate types. If the file doesn't exist or has errors,
-    default values are used.
+    This function reads deployment configuration from an INI file
+    and converts the values to appropriate types. If the file
+    doesn't exist or has errors, default values are used.
 
     Args:
-        config_file (str): Path to the configuration file (default: "deploy.config")
+        config_file (str): Path to the configuration file
+        (default: "deploy.config")
 
     Returns:
         dict: Configuration dictionary with all settings
@@ -65,7 +69,8 @@ def load_config(config_file="deploy.config"):
 
     if not os.path.exists(config_file):
         print_status(
-            f"Configuration file '{config_file}' not found, using default values"
+            f"Configuration file '{config_file}' not found, "
+            f"using default values"
         )
         return config
 
@@ -77,9 +82,14 @@ def load_config(config_file="deploy.config"):
         parser.read(config_file)
 
         # Define mapping of config sections to their respective keys
-        # This allows organizing related settings in different sections of the config file
+        # This allows organizing related settings in different sections of the
+        # config file
         sections_mapping = {
-            "deployment": ["force_redeploy", "continue_if_deployed", "auto_approve"],
+            "deployment": [
+                "force_redeploy",
+                "continue_if_deployed",
+                "auto_approve",
+            ],
             "skip_options": [
                 "skip_nat",
                 "skip_ansible",
@@ -123,9 +133,11 @@ def load_config(config_file="deploy.config"):
 
 def parse_arguments():
     """
-    Parse command-line arguments and apply configuration defaults from the config file.
+    Parse command-line arguments and apply configuration defaults
+    from the config file.
 
-    Command-line arguments take precedence over configuration file settings.
+    Command-line arguments take precedence over configuration
+    file settings.
 
     Returns:
         argparse.Namespace: Parsed arguments with defaults applied
@@ -135,7 +147,8 @@ def parse_arguments():
 
     parser = argparse.ArgumentParser(
         description="Deploy and manage VMs on Proxmox",
-        epilog="Configuration file: deploy.config (command line flags override file settings)",
+        epilog="Configuration file: deploy.config (command line flags "
+        "override file settings)",
     )
     parser.add_argument(
         "--force-redeploy",
@@ -151,7 +164,9 @@ def parse_arguments():
         "--skip-nat", action="store_true", help="Skip NAT rule configuration"
     )
     parser.add_argument(
-        "--skip-ansible", action="store_true", help="Skip Ansible configuration"
+        "--skip-ansible",
+        action="store_true",
+        help="Skip Ansible configuration",
     )
     parser.add_argument(
         "--no-vm-update",
@@ -174,9 +189,13 @@ def parse_arguments():
         help="Skip OpenFaaS installation playbook (install_openfaas.yml)",
     )
     parser.add_argument(
-        "--destroy", action="store_true", help="Destroy the created infrastructure"
+        "--destroy",
+        action="store_true",
+        help="Destroy the created infrastructure",
     )
-    parser.add_argument("--workspace", help="Select a specific Terraform workspace")
+    parser.add_argument(
+        "--workspace", help="Select a specific Terraform workspace"
+    )
     parser.add_argument(
         "--auto-approve",
         action="store_true",
@@ -185,8 +204,10 @@ def parse_arguments():
 
     args = parser.parse_args()
 
-    # Apply config defaults for any arguments not explicitly set on the command line
-    # For each option, if it wasn't specified in command line args but exists in the config,
+    # Apply config defaults for any arguments not explicitly
+    # set on the command line
+    # For each option, if it wasn't specified in command line
+    # args but exists in the config,
     # use the value from the config file
 
     # Deployment options
@@ -224,8 +245,9 @@ def main():
     """
     Main entry point for the Proxmox stack deployment script.
 
-    This function orchestrates the entire deployment or destruction process based on
-    the provided arguments. It handles:
+    This function orchestrates the entire deployment or
+    destruction process based on the provided arguments.
+    It handles:
     1. Infrastructure destruction if --destroy is specified
     2. Initial setup and validation
     3. Terraform deployment
@@ -238,7 +260,9 @@ def main():
         print_header("INFRASTRUCTURE DESTRUCTION")
         # First remove NAT rules with Ansible
         if not run_ansible_destroy():
-            print_error("NAT rule removal failed. Continuing with destruction...")
+            print_error(
+                "NAT rule removal failed. Continuing with destruction..."
+            )
         # Then destroy all Terraform-managed resources
         run_terraform_destroy()
         # Clean up inventory files
@@ -259,24 +283,33 @@ def main():
         # Configure NAT rules
         if not args.skip_nat:
             if not run_ansible_nat_configuration():
-                print_error("NAT configuration failed. Continuing with deployment...")
+                print_error(
+                    "NAT configuration failed. Continuing with deployment..."
+                )
         # Configure VMs (updates, packages, etc.)
         if not args.no_vm_update:
             if not run_ansible_vm_configuration():
-                print_error("VM configuration failed. Continuing with deployment...")
+                print_error(
+                    "VM configuration failed. Continuing with deployment..."
+                )
         # Install K3s Kubernetes
         if not args.no_k3s:
             if not run_ansible_k3s_installation():
-                print_error("K3s installation failed. Continuing with deployment...")
+                print_error(
+                    "K3s installation failed. Continuing with deployment..."
+                )
         # Install Docker
         if not args.no_docker:
             if not run_ansible_docker_installation():
-                print_error("Docker installation failed. Continuing with deployment...")
+                print_error(
+                    "Docker installation failed. Continuing with deployment..."
+                )
         # Install OpenFaaS
         if not args.no_openfaas:
             if not run_ansible_openfaas_installation():
                 print_error(
-                    "OpenFaaS installation failed. Continuing with deployment..."
+                    "OpenFaaS installation failed. "
+                    "Continuing with deployment..."
                 )
 
     print_status("Deployment completed successfully")
@@ -304,7 +337,9 @@ def run_terraform_destroy():
     """
     if check_command_exists("tofu"):
         tf_cmd = "tofu"
-        tf_version_result = run_command(f"{tf_cmd} version", capture_output=True)
+        tf_version_result = run_command(
+            f"{tf_cmd} version", capture_output=True
+        )
         tf_version = (
             tf_version_result.stdout.splitlines()[0]
             if tf_version_result.stdout
@@ -313,7 +348,9 @@ def run_terraform_destroy():
         print_status(f"Using OpenTofu: {tf_version}")
     else:
         tf_cmd = "terraform"
-        tf_version_result = run_command(f"{tf_cmd} version", capture_output=True)
+        tf_version_result = run_command(
+            f"{tf_cmd} version", capture_output=True
+        )
         tf_version = (
             tf_version_result.stdout.splitlines()[0]
             if tf_version_result.stdout
@@ -365,7 +402,8 @@ def run_terraform_deploy(args):
     if args.auto_approve:
         os.environ["AUTO_APPROVE"] = "true"
         print_status(
-            "Auto-approve enabled: Terraform changes will be applied automatically"
+            "Auto-approve enabled: Terraform changes will be "
+            "applied automatically"
         )
 
     run_terraform_workflow()
@@ -421,7 +459,9 @@ def run_ansible_playbook(operation_name, playbook_path, inventory_path):
             print_ansible(f"Playbook executed with return code: {result.rc}")
             return True
         else:
-            print_error(f"Ansible {operation_name} failed with status: {result.status}")
+            print_error(
+                f"Ansible {operation_name} failed with status: {result.status}"
+            )
             print_error(f"Return code: {result.rc}")
 
             # Show error details if available

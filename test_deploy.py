@@ -17,10 +17,13 @@ import os
 import shutil
 import tempfile
 
-# Add the current directory to the path so we can import deploy
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-import deploy
+# Try to import deploy from current directory
+try:
+    import deploy
+except ImportError:
+    # Add the current directory to the path so we can import deploy
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import deploy
 
 
 class TestArgumentParsing(unittest.TestCase):
@@ -137,24 +140,76 @@ class TestDeploymentFunctions(unittest.TestCase):
     """Test individual deployment functions"""
 
     def setUp(self):
-        # Create dummy files for ansible playbooks
+        """Set up test environment with temporary files"""
+        # Create a temporary directory for test files
+        self.test_dir = tempfile.mkdtemp()
+        self.original_cwd = os.getcwd()
+
+        # Track original state of directories
+        self.playbooks_existed = os.path.exists("playbooks")
+        self.inventories_existed = os.path.exists("inventories")
+        self.playbook_yml_existed = os.path.exists("playbook.yml")
+        self.inventory_ini_existed = os.path.exists("inventory.ini")
+
+        # Backup existing files if they exist
+        if self.playbooks_existed:
+            self.playbooks_backup = os.path.join(
+                self.test_dir, "playbooks_backup"
+            )
+            shutil.copytree("playbooks", self.playbooks_backup)
+
+        # Create necessary test directories and files
         os.makedirs("playbooks", exist_ok=True)
         os.makedirs("inventories", exist_ok=True)
+
+        # Create required test files
         with open("./playbooks/remove_nat_rules.yml", "w") as f:
-            f.write("---")
+            f.write("---\n# Test playbook")
         with open("./inventories/inventory-nat-rules.ini", "w") as f:
-            f.write("[all]")
-        with open("playbook.yml", "w") as f:
-            f.write("---")
-        with open("inventory.ini", "w") as f:
-            f.write("[all]")
+            f.write("[all]\n# Test inventory")
+
+        if not self.playbook_yml_existed:
+            with open("playbook.yml", "w") as f:
+                f.write("---\n# Test playbook")
+
+        if not self.inventory_ini_existed:
+            with open("inventory.ini", "w") as f:
+                f.write("[all]\n# Test inventory")
 
     def tearDown(self):
-        # Clean up dummy files
-        shutil.rmtree("playbooks")
-        shutil.rmtree("inventories")
-        os.remove("playbook.yml")
-        os.remove("inventory.ini")
+        """Clean up test environment and restore original state"""
+        # Remove test files we created
+        test_files_to_remove = [
+            "./playbooks/remove_nat_rules.yml",
+            "./inventories/inventory-nat-rules.ini",
+        ]
+
+        for file_path in test_files_to_remove:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+
+        # Remove directories only if they didn't exist originally
+        if not self.inventories_existed and os.path.exists("inventories"):
+            shutil.rmtree("inventories")
+
+        # Restore playbooks directory if it existed originally
+        if self.playbooks_existed:
+            if os.path.exists("playbooks"):
+                shutil.rmtree("playbooks")
+            shutil.copytree(self.playbooks_backup, "playbooks")
+        elif os.path.exists("playbooks"):
+            # Remove playbooks directory if it didn't exist originally
+            shutil.rmtree("playbooks")
+
+        # Remove test files we created
+        if not self.playbook_yml_existed and os.path.exists("playbook.yml"):
+            os.remove("playbook.yml")
+
+        if not self.inventory_ini_existed and os.path.exists("inventory.ini"):
+            os.remove("inventory.ini")
+
+        # Clean up temporary directory
+        shutil.rmtree(self.test_dir)
 
     @patch("ansible_runner.run")
     def test_run_ansible_destroy(self, mock_ansible_runner):
@@ -174,7 +229,9 @@ class TestDeploymentFunctions(unittest.TestCase):
     @patch("deploy.run_command")
     @patch("os.chdir")
     @patch("deploy.check_command_exists")
-    def test_run_terraform_destroy_with_tofu(self, mock_check_command_exists, mock_chdir, mock_run_command):
+    def test_run_terraform_destroy_with_tofu(
+        self, mock_check_command_exists, mock_chdir, mock_run_command
+    ):
         """Test Terraform destroy function with tofu"""
         mock_check_command_exists.return_value = True
         mock_run_command.return_value = MagicMock(stdout="OpenTofu v1.6.0")
@@ -185,12 +242,16 @@ class TestDeploymentFunctions(unittest.TestCase):
     @patch("deploy.run_command")
     @patch("os.chdir")
     @patch("deploy.check_command_exists")
-    def test_run_terraform_destroy_with_terraform(self, mock_check_command_exists, mock_chdir, mock_run_command):
+    def test_run_terraform_destroy_with_terraform(
+        self, mock_check_command_exists, mock_chdir, mock_run_command
+    ):
         """Test Terraform destroy function with terraform"""
         mock_check_command_exists.return_value = False
         mock_run_command.return_value = MagicMock(stdout="Terraform v1.2.0")
         deploy.run_terraform_destroy()
-        mock_run_command.assert_any_call("terraform version", capture_output=True)
+        mock_run_command.assert_any_call(
+            "terraform version", capture_output=True
+        )
         mock_run_command.assert_called_with("terraform destroy -auto-approve")
 
     @patch("deploy.check_prerequisites")
@@ -198,7 +259,11 @@ class TestDeploymentFunctions(unittest.TestCase):
     @patch("deploy.get_validated_vars")
     @patch("deploy.setup_ssh_keys")
     def test_run_initial_setup_and_validation_tasks(
-        self, mock_setup_ssh_keys, mock_get_validated_vars, mock_validate_tfvars_file, mock_check_prerequisites
+        self,
+        mock_setup_ssh_keys,
+        mock_get_validated_vars,
+        mock_validate_tfvars_file,
+        mock_check_prerequisites,
     ):
         """Test initial setup and validation tasks"""
         mock_check_prerequisites.return_value = True
@@ -215,7 +280,9 @@ class TestDeploymentFunctions(unittest.TestCase):
 
     @patch("deploy.run_terraform_workflow")
     @patch("deploy.run_command")
-    def test_run_terraform_deploy_with_workspace(self, mock_run_command, mock_run_terraform_workflow):
+    def test_run_terraform_deploy_with_workspace(
+        self, mock_run_command, mock_run_terraform_workflow
+    ):
         """Test Terraform deploy with workspace"""
         mock_args = MagicMock()
         mock_args.workspace = "production"
@@ -223,7 +290,9 @@ class TestDeploymentFunctions(unittest.TestCase):
 
         deploy.run_terraform_deploy(mock_args)
 
-        mock_run_command.assert_called_once_with("terraform workspace select production")
+        mock_run_command.assert_called_once_with(
+            "terraform workspace " "select production"
+        )
         mock_run_terraform_workflow.assert_called_once()
         self.assertEqual(os.environ.get("AUTO_APPROVE"), "true")
 
@@ -231,14 +300,18 @@ class TestDeploymentFunctions(unittest.TestCase):
     def test_run_ansible_playbook_success(self, mock_ansible_runner):
         """Test successful Ansible playbook execution"""
         mock_ansible_runner.return_value = MagicMock(status="successful", rc=0)
-        result = deploy.run_ansible_playbook("test playbook", "playbook.yml", "inventory.ini")
+        result = deploy.run_ansible_playbook(
+            "test playbook", "playbook.yml", "inventory.ini"
+        )
         self.assertTrue(result)
 
     @patch("ansible_runner.run")
     def test_run_ansible_playbook_failure(self, mock_ansible_runner):
         """Test failed Ansible playbook execution"""
         mock_ansible_runner.return_value = MagicMock(status="failed", rc=1)
-        result = deploy.run_ansible_playbook("test playbook", "playbook.yml", "inventory.ini")
+        result = deploy.run_ansible_playbook(
+            "test playbook", "playbook.yml", "inventory.ini"
+        )
         self.assertFalse(result)
 
 
@@ -376,7 +449,9 @@ skip_nat=true
 [terraform]
 workspace=test-env
 """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".config", delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".config", delete=False
+        ) as f:
             f.write(ini_content)
             f.flush()
             config = deploy.load_config(f.name)
