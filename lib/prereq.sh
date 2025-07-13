@@ -6,57 +6,55 @@ source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 # Funzione per verificare prerequisiti
 check_prerequisites() {
-    print_header "VERIFICA PREREQUISITI"
+    print_header "CHECK PREREQUISITES"
     
     if command -v tofu &> /dev/null; then
         export TERRAFORM_COMMAND="tofu"
     else
         export TERRAFORM_COMMAND="terraform"
     fi
-    print_status "✓ Usando $TERRAFORM_COMMAND"
+    print_status "✓ Using $TERRAFORM_COMMAND"
     
     # Verifica Ansible
     if ! command -v ansible &> /dev/null; then
-        print_error "Ansible non è installato. Installalo prima di continuare."
-        print_status "Suggerimento: pip install ansible"
+        print_error "Ansible is not installed."
         exit 1
     fi
     
     # Verifica ansible-playbook
     if ! command -v ansible-playbook &> /dev/null; then
-        print_error "ansible-playbook non è disponibile."
+        print_error "ansible-playbook coomand is not available."
         exit 1
     fi
     
-    # Verifica file Terraform
+    # Check the existence of Terraform files.
+    # this should not be here, however, it could be performed automatically by the engine if a terraform task is defined
+    # a function should be used, in case of multiple terraform task
     cd "$TERRAFORM_DIR" || exit
     if ! ls *.tf &>/dev/null; then
-        print_error "Nessun file .tf trovato nella directory corrente"
+        print_error "No .tf file has been found in the current directory"
         exit 1
     fi
     cd ..
-    print_debug "$PWD"
-    
-    # Verifica playbook Ansible
+
+    # Check playbook Ansible
+    # use a function for this
     if [[ ! -f "$PLAYBOOK_FILE1" ]]; then
-        print_warning "Playbook Ansible '$PLAYBOOK_FILE1' non trovato"
-        print_status "Lo script continuerà senza configurazione Ansible"
-        SKIP_ANSIBLE=true
+        print_warning "Playbook Ansible '$PLAYBOOK_FILE1' not found"
+        exit 1
     fi
         # Verifica playbook Ansible
     if [[ ! -f "$PLAYBOOK_FILE2" ]]; then
-        print_warning "Playbook Ansible '$PLAYBOOK_FILE2' non trovato"
-        print_status "Lo script continuerà senza configurazione Ansible"
-        SKIP_ANSIBLE=true
+        print_warning "Playbook Ansible '$PLAYBOOK_FILE2' not found"
+        exit 1
     fi
         # Verifica playbook Ansible
     if [[ ! -f "$PLAYBOOK_FILE3" ]]; then
-        print_warning "Playbook Ansible '$PLAYBOOK_FILE3' non trovato"
-        print_status "Lo script continuerà senza configurazione Ansible"
-        SKIP_ANSIBLE=true
+        print_warning "Playbook Ansible '$PLAYBOOK_FILE3' not found"
+        exit
     fi
     
-    print_status "✓ Tutti i prerequisiti sono soddisfatti"
+    print_status "✓ All requirements are satisfied"
 
 }
 # Funzione per leggere proxmox_host da terraform.tfvars
@@ -131,14 +129,13 @@ get_ci_user_from_tfvars() {
 
 # Funzione per validare terraform.tfvars
 validate_tfvars_file() {
-    print_header "VALIDAZIONE FILE TERRAFORM.TFVARS"
+    print_header "FILE VALIDATIONTERRAFORM.TFVARS"
     cd "$TERRAFORM_DIR" || exit 1
     echo "$PWD"
 
     local tfvars_file="terraform.tfvars" # dichiara il nome del file tfvars
 
-    print_debug "Iniziando validazione del file: $tfvars_file"
-    print_debug "Directory corrente: $(pwd)"
+    print_debug "Starting file validation: $tfvars_file"
     
     # Verifica esistenza file
     print_debug "Verificando esistenza del file..."

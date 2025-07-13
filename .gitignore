@@ -9,6 +9,8 @@
 .terraform.tfstate.lock.info
 **/*.tfvars
 *.tfvars
+**/tfplan
+*.tfplan
 # Logs
 **/*.log
 
@@ -20,8 +22,33 @@
 # IDEs
 .vscode/
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
 # Other generated files
 ansible_debug_script.sh
 diagnose_network.sh
 generate_inventory.sh
 terraform.tfvars
+/artifacts/
+/.ansible/

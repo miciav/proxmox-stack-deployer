@@ -5,7 +5,6 @@
   vars:
     port_range_start: 145
     port_range_end: 15000
-    inventory_file: "{{ inventory_dir }}/inventory-updates.ini"
 
   tasks:
     - name: Ensure interfaces file exists
@@ -20,7 +19,7 @@
 
     - name: Get list of currently used ports
       ansible.builtin.shell: |
-        ss -tln | awk 'NR>1 {gsub(/.*:/,"",$4); print $4}' | sort -n | uniq
+        ss -tln | awk 'NR>1 {gsub(/.*:/,""),"",$4); print $4}' | sort -n | uniq
       register: used_ports_result
       changed_when: false
 
@@ -102,29 +101,6 @@
       become: true
       changed_when: true
 
-    - name: Save port mappings to file for reference
-      ansible.builtin.copy:
-        content: |
-          # Port mappings generated on {{ ansible_date_time.iso8601 }}
-          # VM_NAME:SERVICE -> HOST_IP:HOST_PORT -> VM_IP:VM_PORT
-          {% for vm_service in groups['port_mappings'] | sort %}
-          {{ hostvars[vm_service]['vm_name'] }}:{{ hostvars[vm_service]['service'] }} -> {{ ansible_host }}:{{ vm_port_mappings[vm_service] }} -> {{ hostvars[vm_service]['vm_ip'] }}:{{ hostvars[vm_service]['vm_port'] }}
-          {% endfor %}
-
-          # SSH Connection Commands (for testing only - StrictHostKeyChecking is disabled!):
-          {% for vm_service in groups['port_mappings'] | sort %}
-          {% if hostvars[vm_service]['vm_port'] == 22 and hostvars[vm_service]['vm_user'] is defined %}
-          ssh -i {{ ansible_ssh_private_key_file }} -p {{ vm_port_mappings[vm_service] }} {{ hostvars[vm_service]['vm_user'] }}@{{ ansible_host }}  # connects to {{ hostvars[vm_service]['vm_name'] }}
-          {% endif %}
-          {% endfor %}
-        dest: "/tmp/vm_port_mappings_{{ inventory_hostname }}.txt"
-        mode: '0644'
-
-    # - name: Wait for NAT rules to be active
-    #   ansible.builtin.wait_for:
-    #     timeout: 5
-    #   delegate_to: localhost
-    #   become: false
 
     - name: Perform SSH connectivity test for SSH services
       ansible.builtin.shell: |
@@ -167,8 +143,6 @@
           {% for vm_service in groups['port_mappings'] | sort %}
           - {{ hostvars[vm_service]['vm_name'] }} ({{ hostvars[vm_service]['service'] }}): {{ ansible_host }}:{{ vm_port_mappings[vm_service] }} -> {{ hostvars[vm_service]['vm_ip'] }}:{{ hostvars[vm_service]['vm_port'] }}
           {% endfor %}
-
-          Port mappings saved to /tmp/vm_port_mappings_{{ inventory_hostname }}.txt
 
           SSH Connection Commands (⚠ for test use only):
           {% for vm_service in groups['port_mappings'] | sort %}

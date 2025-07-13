@@ -87,6 +87,15 @@ The `wait_for_vm.sh` script performs the following checks for each VM:
    - Verifies qemu-guest-agent service status
    - Performs system info check (`uname -a`)
 
+### Post-Deployment Configuration
+After VM initialization, the following Ansible playbooks are executed:
+
+1. **NAT Rules Configuration** (`add_nat_rules.yml`)
+2. **VM Configuration** (`configure-vms.yml`)
+3. **K3s Installation** (`k3s_install.yml`)
+4. **Docker Installation** (`docker_install.yml`)
+5. **OpenFaaS Deployment** (`install_openfaas.yml`) - Installs OpenFaaS using Helm on K3s nodes
+
 ### Sequential Execution Logic
 ```hcl
 triggers = {

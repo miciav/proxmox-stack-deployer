@@ -1,6 +1,6 @@
 ---
 - name: Install K3s on remote nodes
-  hosts: vms
+  hosts: k3s_nodes
   become: yes
   tasks:
     - name: Check if K3s uninstall script exists

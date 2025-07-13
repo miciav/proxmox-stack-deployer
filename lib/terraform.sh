@@ -165,24 +165,37 @@ get_vm_summary_from_terraform() {
     echo "$VM_SUMMARY"
 }
 
-# Funzione legacy per compatibilità (ottiene IP della prima VM)
-get_vm_ip_from_terraform() {
-    local vm_ips
-    if ! vm_ips=$(get_vm_ips_from_terraform); then
-        return 1
-    fi
+# Funzione per distruggere l'infrastruttura
+run_terraform_destroy() {
+    print_header "DESTRUCTION DE L'INFRASTRUCTURE"
 
-    # Estrae il primo IP dalla lista
-    echo "$vm_ips" | jq -r 'values[0] // empty'
-}
-
-get_output_in_json(){
     cd "$TERRAFORM_DIR" || exit
-    if ! TERRAFORM_OUTPUT_JSON=$($TF_CMD output -json 2>/dev/null); then
-      print_error "Impossibile ottenere l'output Terraform"
-      cd ..
-      return 1
+
+    # Determina comando Terraform
+    if command -v tofu &> /dev/null; then
+        TF_CMD="tofu"
+    else
+        TF_CMD="terraform"
     fi
+
+    print_status "Avvio del processo di distruzione con $TF_CMD..."
+
+    # Aggiungi --auto-approve se richiesto
+    local destroy_args=""
+    if [[ "$AUTO_APPROVE" == "true" ]]; then
+        print_status "Modalità auto-approve ATTIVATA."
+        destroy_args="--auto-approve"
+    else
+        print_warning "L'approvazione manuale sarà richiesta."
+    fi
+
+    # Esegui il comando di distruzione
+    if ! $TF_CMD destroy $destroy_args; then
+        print_error "Errore durante la distruzione dell'infrastruttura."
+        cd ..
+        exit 1
+    fi
+
+    print_success "Infrastruttura distrutta con successo."
     cd ..
-  echo "$TERRAFORM_OUTPUT_JSON"
 }

@@ -103,6 +103,16 @@ output "vm_ips" {
 
 # Generate variables for the J2 template
 locals {
+  # Determine role for each VM
+  vm_roles_resolved = {
+    for i in range(var.vm_count) :
+    proxmox_virtual_environment_vm.ubuntu-vm[i].name => lookup(
+      var.vm_roles,
+      proxmox_virtual_environment_vm.ubuntu-vm[i].name,
+      var.default_vm_role
+    )
+  }
+
   # Create port mappings for each VM service
   port_mappings = merge(
     # SSH port mappings
@@ -110,10 +120,17 @@ locals {
       for i in range(var.vm_count) :
       "${proxmox_virtual_environment_vm.ubuntu-vm[i].name}_ssh" => 2200 + i
     },
-    # K3s port mappings
+    # K3s port mappings - only for VMs with k3s role
     {
       for i in range(var.vm_count) :
       "${proxmox_virtual_environment_vm.ubuntu-vm[i].name}_k3s" => 6443 + i
+      if local.vm_roles_resolved[proxmox_virtual_environment_vm.ubuntu-vm[i].name] == "k3s"
+    },
+    # Docker port mappings - only for VMs with docker role
+    {
+      for i in range(var.vm_count) :
+      "${proxmox_virtual_environment_vm.ubuntu-vm[i].name}_docker" => 2375 + i
+      if local.vm_roles_resolved[proxmox_virtual_environment_vm.ubuntu-vm[i].name] == "docker"
     }
   )
 
@@ -128,8 +145,9 @@ locals {
 
     # VM information for port mappings
     vm_services = flatten([
-      for i in range(var.vm_count) : [
-        {
+      for i in range(var.vm_count) : concat(
+        # SSH service for all VMs
+        [{
           name    = "${proxmox_virtual_environment_vm.ubuntu-vm[i].name}_ssh"
           vm_id   = proxmox_virtual_environment_vm.ubuntu-vm[i].vm_id
           vm_name = proxmox_virtual_environment_vm.ubuntu-vm[i].name
@@ -137,8 +155,10 @@ locals {
           vm_port = 22
           service = "SSH"
           vm_user = var.ci_user
-        },
-        {
+          vm_role = local.vm_roles_resolved[proxmox_virtual_environment_vm.ubuntu-vm[i].name]
+        }],
+        # K3s service for VMs with k3s role
+        local.vm_roles_resolved[proxmox_virtual_environment_vm.ubuntu-vm[i].name] == "k3s" ? [{
           name    = "${proxmox_virtual_environment_vm.ubuntu-vm[i].name}_k3s"
           vm_id   = proxmox_virtual_environment_vm.ubuntu-vm[i].vm_id
           vm_name = proxmox_virtual_environment_vm.ubuntu-vm[i].name
@@ -146,8 +166,20 @@ locals {
           vm_port = 6443
           service = "k3s"
           vm_user = var.ci_user
-        }
-      ]
+          vm_role = "k3s"
+        }] : [],
+        # Docker service for VMs with docker role
+        local.vm_roles_resolved[proxmox_virtual_environment_vm.ubuntu-vm[i].name] == "docker" ? [{
+          name    = "${proxmox_virtual_environment_vm.ubuntu-vm[i].name}_docker"
+          vm_id   = proxmox_virtual_environment_vm.ubuntu-vm[i].vm_id
+          vm_name = proxmox_virtual_environment_vm.ubuntu-vm[i].name
+          vm_ip   = chomp(data.local_file.vm_ip[i].content)
+          vm_port = 2375
+          service = "docker"
+          vm_user = var.ci_user
+          vm_role = "docker"
+        }] : []
+      )
     ])
   }
 }
@@ -203,6 +235,12 @@ output "vm_nodes" {
   }
 }
 
+# Output for VM roles
+output "vm_roles" {
+  value       = local.vm_roles_resolved
+  description = "Resolved roles for each VM"
+}
+
 # Summary output for easy reference
 output "vm_summary" {
   value = {
@@ -212,6 +250,7 @@ output "vm_summary" {
       ip   = chomp(data.local_file.vm_ip[i].content)
       mac  = format("02:00:00:00:%02x:%02x", i + 1, i + 100)
       node = proxmox_virtual_environment_vm.ubuntu-vm[i].node_name
+      role = local.vm_roles_resolved[proxmox_virtual_environment_vm.ubuntu-vm[i].name]
     }
   }
   depends_on = [data.local_file.vm_ip]

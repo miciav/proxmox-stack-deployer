@@ -13,6 +13,30 @@ source "$(dirname "$0")/lib/terraform.sh" # Terraform/OpenTofu management
 # Ensure cleanup is called on exit
 trap cleanup EXIT
 
+# Function to load configuration from INI file
+load_config() {
+    local config_file="${1:-deploy.config}"
+
+    if [[ -f "$config_file" ]]; then
+        print_status "Loading configuration from '$config_file'"
+        
+        # Use awk to simulate INI parsing
+        eval $(awk 'BEGIN { section="" } \
+            /^[[:space:]]*\[.*\][[:space:]]*$/ {\
+                gsub(/[][]/, ""); section=tolower($0); next } \
+            /^[[:space:]]*;/ { next } \
+            /^[^#]/ && /^[[:space:]]*[^[:space:]=]+[[:space:]]*=[[:space:]]*.*$/ {\
+                split($0, a, "="); \
+                gsub(/[[:space:]]+/, "", a[1]); \
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", a[2]); \
+                print tolower(section "_" a[1]) "=" a[2] \
+            }' "$config_file")
+
+    else
+        print_status "Configuration file '$config_file' not found, using default values"
+    fi
+}
+
 # Function to parse arguments
 parse_arguments() {
     # Initialize global variables with default values
@@ -22,6 +46,8 @@ parse_arguments() {
     SKIP_ANSIBLE="false"
     NO_VM_UPDATE="false"
     NO_K3S="false"
+    NO_DOCKER="false"
+    NO_OPENFAAS="false"
     WORKSPACE=""
     AUTO_APPROVE="false"
     
@@ -59,6 +85,14 @@ parse_arguments() {
                 NO_K3S="true"
                 shift
                 ;;
+            --no-docker)
+                NO_DOCKER="true"
+                shift
+                ;;
+            --no-openfaas)
+                NO_OPENFAAS="true"
+                shift
+                ;;
             --destroy)
                 DESTROY="true"
                 shift
@@ -75,8 +109,24 @@ parse_arguments() {
         esac
     done
     
+    # Load configuration file (this will only set variables that weren't set by command line)
+    load_config "deploy.config"
+    
+    # Map INI section_key format to our variable names and apply defaults
+    [[ "$FORCE_REDEPLOY" == "false" ]] && [[ "$deployment_force_redeploy" == "true" ]] && FORCE_REDEPLOY="true"
+    [[ "$CONTINUE_IF_DEPLOYED" == "false" ]] && [[ "$deployment_continue_if_deployed" == "true" ]] && CONTINUE_IF_DEPLOYED="true"
+    [[ "$AUTO_APPROVE" == "false" ]] && [[ "$deployment_auto_approve" == "true" ]] && AUTO_APPROVE="true"
+    [[ "$SKIP_NAT" == "false" ]] && [[ "$skip_options_skip_nat" == "true" ]] && SKIP_NAT="true"
+    [[ "$SKIP_ANSIBLE" == "false" ]] && [[ "$skip_options_skip_ansible" == "true" ]] && SKIP_ANSIBLE="true"
+    [[ "$NO_VM_UPDATE" == "false" ]] && [[ "$skip_options_no_vm_update" == "true" ]] && NO_VM_UPDATE="true"
+    [[ "$NO_K3S" == "false" ]] && [[ "$skip_options_no_k3s" == "true" ]] && NO_K3S="true"
+    [[ "$NO_DOCKER" == "false" ]] && [[ "$skip_options_no_docker" == "true" ]] && NO_DOCKER="true"
+    [[ "$NO_OPENFAAS" == "false" ]] && [[ "$skip_options_no_openfaas" == "true" ]] && NO_OPENFAAS="true"
+    [[ "$DESTROY" == "false" ]] && [[ "$destruction_destroy" == "true" ]] && DESTROY="true"
+    [[ -z "$WORKSPACE" ]] && [[ -n "$terraform_workspace" ]] && WORKSPACE="$terraform_workspace"
+    
     # Export variables to make them available to other scripts
-    export FORCE_REDEPLOY CONTINUE_IF_DEPLOYED SKIP_NAT SKIP_ANSIBLE NO_VM_UPDATE NO_K3S WORKSPACE AUTO_APPROVE
+    export FORCE_REDEPLOY CONTINUE_IF_DEPLOYED SKIP_NAT SKIP_ANSIBLE NO_VM_UPDATE NO_K3S NO_DOCKER NO_OPENFAAS WORKSPACE AUTO_APPROVE
 }
 
 # Function to show help
@@ -85,16 +135,22 @@ show_help() {
 Usage: $0 [OPTIONS]
 
 OPTIONS:
-    --force-redeploy        Force a new deployment even if one already exists
-    --continue-if-deployed  Continue execution even if the deployment already exists
+    --force-redeploy       Force a new deployment even if one already exists
+    --continue-if-deployed Continue execution even if the deployment already exists
     --skip-nat             Skip NAT rule configuration
     --skip-ansible         Skip Ansible configuration
     --workspace NAME       Select a specific Terraform workspace
     --auto-approve         Automatically approve Terraform changes
     --no-vm-update         Skip VM configuration playbook (configure-vms.yml)
     --no-k3s               Skip K3s installation playbook (k3s_install.yml)
+    --no-docker            Skip Docker installation playbook (docker_install.yml)
+    --no-openfaas          Skip OpenFaaS installation playbook (install_openfaas.yml)
     --destroy              Destroy the created infrastructure
     -h, --help             Show this help
+
+CONFIGURATION:
+    Configuration file: deploy.config (command line flags override file settings)
+    Place this file in the same directory as the deployment script.
 
 EXAMPLES:
     $0 --auto-approve --continue-if-deployed
@@ -116,11 +172,54 @@ run_ansible_destroy(){
   print_success "NAT rules removed successfully"
 }
 
+
+run_initial_setup_and_validation_tasks(){
+    # Check prerequisites
+    check_prerequisites
+    # Validate the terraform.tfvars file and read ci_user and proxmox_host
+    validate_tfvars_file
+    get_validated_vars
+    # Setup SSH keys
+    setup_ssh_keys
+   # test_proxmox_connection "$PROXMOX_HOST" "$PROXMOX_USER"
+}
+
+run_terraform_deploy(){
+      # Select workspace if specified
+      select_terraform_workspace "$WORKSPACE"
+      # Execute Terraform/OpenTofu workflow
+      if run_terraform_workflow; then
+          print_status "No changes to the infrastructure, checking if the VM already exists"
+      fi
+
+      # Get information of all VMs
+      local vm_summary
+      if ! vm_summary=$(get_vm_summary_from_terraform); then
+          exit 1
+      fi
+
+      print_status "VM information obtained:"
+      echo "$vm_summary" | jq .
+
+      # Get array of VM IPs
+      local vm_ips
+      if ! vm_ips=$(get_vm_ips_from_terraform); then
+          print_error "Failed to get VM IPs from Terraform output."
+          exit 1
+      fi
+
+      print_status "VM IPs: $(echo "$vm_ips" | jq -r 'values | join(", ")')"
+}
+
+
 # Main deployment function
 main() {
     # Parse arguments
     parse_arguments "$@"
-    
+
+    # Initial header
+    print_header "🚀 STARTING WORKFLOW AT $(date)"
+
     # If destroy is requested, execute and exit
     if [[ "$DESTROY" == "true" ]]; then
         run_ansible_destroy
@@ -129,65 +228,34 @@ main() {
         exit 0
     fi
 
-    # Initial header
-    print_header "🚀 VM DEPLOYMENT WITH TERRAFORM/OPENTOFU AND ANSIBLE"
-    print_status "Starting deployment at $(date)"
-    
-        # Check if the deployment already exists
+    # First task, it is a shell-based task
+    run_initial_setup_and_validation_tasks
+
+    # Second Task, execute terraform/opentofu
+
+    # Check if the deployment already exists
+    cd "$TERRAFORM_DIR" || exit 1
     if [[ "$FORCE_REDEPLOY" != "true" ]] && [[ -f "terraform.tfstate" ]] && [[ $(jq '.resources | length' terraform.tfstate) -gt 0 ]]; then
         print_warning "The deployment seems to have been already executed."
         if [[ "$CONTINUE_IF_DEPLOYED" != "true" ]]; then
             print_warning "Use --force-redeploy to force a new deployment or --continue-if-deployed to continue."
             exit 0
         else
+            cd ..
             print_status "Flag --continue-if-deployed detected, execution continues."
+            run_terraform_deploy
         fi
+    else
+      cd ..
+      print_status "Flag --continue-if-deployed detected, execution continues."
+      run_terraform_deploy
     fi
-    
-    # Check prerequisites
-    check_prerequisites
-    
-    # Validate the terraform.tfvars file and read ci_user and proxmox_host
-    validate_tfvars_file
+    cd ..
 
-    get_validated_vars
-
-
-    # Setup SSH keys
-    setup_ssh_keys
-
-    test_proxmox_connection "$PROXMOX_HOST" "$PROXMOX_USER"
-
-    # Select workspace if specified
-    select_terraform_workspace "$WORKSPACE"
-    
-    # Execute Terraform/OpenTofu workflow
-    if run_terraform_workflow; then 
-        print_status "No changes to the infrastructure, checking if the VM already exists"
-    fi
-    
-    # Get information of all VMs
-    local vm_summary
-    if ! vm_summary=$(get_vm_summary_from_terraform); then
-        exit 1
-    fi
-    
-    print_status "VM information obtained:"
-    echo "$vm_summary" | jq .
-    
-    # Get array of VM IPs
-    local vm_ips
-    if ! vm_ips=$(get_vm_ips_from_terraform); then
-        print_error "Failed to get VM IPs from Terraform output."
-        exit 1
-    fi
-    
-    print_status "VM IPs: $(echo "$vm_ips" | jq -r 'values | join(", ")')"
- 
-
+    #Ansible task 1
     # Configure NAT rules using Ansible
-    if [[ "$SKIP_NAT" != "true" ]]; then
-        if [[ "${SKIP_ANSIBLE:-false}" != "true" ]]; then    
+    if [[ "${SKIP_ANSIBLE:-false}" != "true" ]]; then
+        if [[ "$SKIP_NAT" != "true" ]]; then
             print_status "Configuring NAT rules for SSH and K3s API via Ansible..."
             NAT_INVENTORY_FILE="./inventories/inventory-nat-rules.ini"
             NAT_PLAYBOOK_FILE="./playbooks/add_nat_rules.yml"
@@ -197,7 +265,7 @@ main() {
         fi
     fi
     
-
+    #Ansible task 2
     if [[ "${SKIP_ANSIBLE:-false}" != "true" ]]; then
         print_status "Starting Ansible configuration for ${#vm_ips[@]} VMs..."
         UPDATE_INVENTORY_FILE="./inventories/inventory_updates.ini"
@@ -211,7 +279,10 @@ main() {
         else
             print_status "Skipping VM configuration (NO_VM_UPDATE=true)"
         fi
+    fi
 
+    #Ansible task 3 - K3s installation
+    if [[ "${SKIP_ANSIBLE:-false}" != "true" ]]; then
         if [[ "${NO_K3S}" != "true" ]]; then
             print_status "Executing K3s playbook..."
             K3S_PLAYBOOK_FILE="./playbooks/k3s_install.yml"
@@ -222,6 +293,40 @@ main() {
             print_success "✓ K3s playbook completed successfully"
         else
             print_status "Skipping K3s installation (NO_K3S=true)"
+        fi
+    else
+        print_status "Ansible configuration skipped (SKIP_ANSIBLE=true)"
+    fi
+    
+    #Ansible task 4 - Docker installation
+    if [[ "${SKIP_ANSIBLE:-false}" != "true" ]]; then
+        if [[ "${NO_DOCKER}" != "true" ]]; then
+            print_status "Executing Docker playbook..."
+            DOCKER_PLAYBOOK_FILE="./playbooks/docker_install.yml"
+            if ! ansible-playbook -i "$UPDATE_INVENTORY_FILE" "$DOCKER_PLAYBOOK_FILE"; then
+                print_error "Error executing Docker playbook"
+                return 1
+            fi
+            print_success "✓ Docker playbook completed successfully"
+        else
+            print_status "Skipping Docker installation (NO_DOCKER=true)"
+        fi
+    else
+        print_status "Ansible configuration skipped (SKIP_ANSIBLE=true)"
+    fi
+    
+    #Ansible task 5 - OpenFaaS installation
+    if [[ "${SKIP_ANSIBLE:-false}" != "true" ]]; then
+        if [[ "${NO_OPENFAAS}" != "true" ]]; then
+            print_status "Executing OpenFaaS playbook..."
+            OPENFAAS_PLAYBOOK_FILE="./playbooks/install_openfaas.yml"
+            if ! ansible-playbook -i "$UPDATE_INVENTORY_FILE" "$OPENFAAS_PLAYBOOK_FILE"; then
+                print_error "Error executing OpenFaaS playbook"
+                return 1
+            fi
+            print_success "✓ OpenFaaS playbook completed successfully"
+        else
+            print_status "Skipping OpenFaaS installation (NO_OPENFAAS=true)"
         fi
     else
         print_status "Ansible configuration skipped (SKIP_ANSIBLE=true)"
