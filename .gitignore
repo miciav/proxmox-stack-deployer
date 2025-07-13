@@ -50,3 +50,5 @@ ansible_debug_script.sh
 diagnose_network.sh
 generate_inventory.sh
 terraform.tfvars
+/artifacts/
+/.ansible/

@@ -6,7 +6,7 @@ pytest-mock>=3.0.0
 # Ansible integration
 ansible-runner>=2.3.1
 types-cryptography>=3.3.23.2
-types-requests>=2.32.4
+types-requests>=2.32.0
 
 # Development dependencies
 black>=22.0.0
