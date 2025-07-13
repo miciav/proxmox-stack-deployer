@@ -1,4 +1,4 @@
-[![Test Deploy.py](https://github.com/USERNAME/proxmox-stack-deployer/workflows/Test%20Deploy.py/badge.svg)](https://github.com/USERNAME/proxmox-stack-deployer/actions)
+[![Test Deploy.py](https://github.com/miciav/proxmox-stack-deployer/workflows/Test%20Deploy.py/badge.svg)](https://github.com/miciav/proxmox-stack-deployer/actions)
 [![codecov](https://codecov.io/gh/miciav/proxmox-stack-deployer/branch/main/graph/badge.svg)](https://codecov.io/gh/miciav/proxmox-stack-deployer)
 [![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
