@@ -26,3 +26,13 @@ This project provides a comprehensive solution for automating the deployment and
 - [Troubleshooting](docs/troubleshooting.md)
 - [Notes on Git History Rewriting](docs/git_history.md)
 - [References](docs/references.md)
+
+## 🖥️ Optional Web Dashboard
+
+A lightweight dashboard is bundled in `webapp/` if you prefer to follow deployments from the browser:
+
+1. Install requirements (ideally inside a virtualenv): `pip install -r requirements-test.txt`.
+2. Start the server: `python webapp/app.py` (customise the port by exporting `DEPLOY_UI_PORT`).
+3. Open `http://localhost:5000` to launch or destroy the stack.
+
+The UI mirrors the Terraform/Ansible workflow, showing live logs and a card for each phase. Cards for Docker or K3s only appear when those roles are defined in `terraform.tfvars`, so the dashboard always matches the roles that will actually run.
