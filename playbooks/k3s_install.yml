@@ -21,6 +21,11 @@
       ansible.builtin.shell: /tmp/k3s_install.sh --tls-san {{ ansible_host }}
       args:
         creates: /usr/local/bin/k3s
+      register: k3s_install_result
+      failed_when:
+        - k3s_install_result.rc != 0
+        - "'Failed to wait for response' not in (k3s_install_result.stderr | default(''))"
+      changed_when: k3s_install_result.rc == 0
 
     - name: Check K3s service status
       ansible.builtin.systemd:
@@ -42,10 +47,23 @@
         timeout: 300 # Wait up to 5 minutes for the port to be open
         msg: "K3s API server did not start internally on port 6443"
 
+    - name: Check if K3s node token exists
+      ansible.builtin.stat:
+        path: /var/lib/rancher/k3s/server/node-token
+      register: k3s_node_token_file
+
+    - name: Read K3s node token
+      ansible.builtin.command: cat /var/lib/rancher/k3s/server/node-token
+      register: k3s_node_token
+      changed_when: false
+      when: k3s_node_token_file.stat.exists
+
     - name: Display K3s node token
       ansible.builtin.debug:
         msg: "K3s node token: {{ k3s_node_token.stdout }}"
-      when: k3s_node_token.stdout is defined and k3s_node_token.stdout != ''
+      when:
+        - k3s_node_token is defined
+        - (k3s_node_token.stdout | default('')) != ''
 
     - name: Remove old Kubeconfig files for this host
       ansible.builtin.file:
