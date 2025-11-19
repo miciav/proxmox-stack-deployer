@@ -11,6 +11,9 @@ types-requests>=2.32.0
 # Terraform integration
 cryptography>=45.0.5
 
+# Web interface
+Flask>=3.0.0
+
 # Development dependencies
 black>=22.0.0
 flake8>=5.0.0

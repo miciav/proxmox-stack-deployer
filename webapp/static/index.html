@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>Proxmox Stack Deployer UI</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Web interface</p>
+          <h1>Proxmox Stack Deployment</h1>
+          <p class="subtitle">
+            Launch <code>deploy.py</code> and follow each major phase from a
+            browser.
+          </p>
+        </div>
+        <div class="actions">
+          <button id="startBtn" class="primary">Start Deployment</button>
+          <p id="runStatus" class="status-label">Idle</p>
+        </div>
+      </header>
+
+      <section class="card">
+        <h2>Deployment stages</h2>
+        <div id="stages" class="stage-list"></div>
+      </section>
+
+      <section class="card">
+        <div class="logs-header">
+          <h2>Activity log</h2>
+          <small>Most recent output from deploy.py</small>
+        </div>
+        <pre id="logOutput" class="log-output">No log output yet.</pre>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
