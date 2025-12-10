@@ -7,12 +7,20 @@ import os
 import re
 import sys
 import time
+import json
 import threading
 import subprocess
 from pathlib import Path
 from typing import Dict, List
 
 from flask import Flask, jsonify, send_from_directory
+
+try:
+    from proxmoxer import ProxmoxAPI
+
+    HAS_PROXMOXER = True
+except ImportError:
+    HAS_PROXMOXER = False
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 DEPLOY_SCRIPT = BASE_DIR / "deploy.py"
@@ -21,6 +29,7 @@ ANSIBLE_TASK_PATTERN = re.compile(r"TASK\s+\[(.+?)\]")
 
 TFVARS_FILE = BASE_DIR / "terraform-opentofu" / "terraform.tfvars"
 TFVARS_EXAMPLE_FILE = BASE_DIR / "terraform-opentofu" / "terraform.tfvars.example"
+TFSTATE_FILE = BASE_DIR / "terraform-opentofu" / "terraform.tfstate"
 
 
 def determine_vm_role_usage() -> Dict[str, bool]:
@@ -92,6 +101,165 @@ def determine_vm_role_usage() -> Dict[str, bool]:
     except Exception:
         # Fallback to defaults if parsing fails
         return {"k3s": True, "docker": False}
+
+
+def parse_proxmox_credentials() -> Dict[str, str]:
+    """Extract Proxmox connection details from terraform.tfvars with fallbacks."""
+    defaults = {
+        "url": "",
+        "host": "",
+        "user": "",
+        "password": "",
+        "node": "",
+        "host_user": "",
+    }
+    tfvars_path = TFVARS_FILE if TFVARS_FILE.exists() else TFVARS_EXAMPLE_FILE
+    if not tfvars_path.exists():
+        return defaults
+
+    try:
+        with tfvars_path.open("r", encoding="utf-8") as tf_file:
+            content = tf_file.read()
+
+        url_match = re.search(r'proxmox_api_url\s*=\s*"([^"]+)"', content)
+        user_match = re.search(r'proxmox_user\s*=\s*"([^"]+)"', content)
+        host_user_match = re.search(r'proxmox_host_user\s*=\s*"([^"]+)"', content)
+        host_match = re.search(r'proxmox_host\s*=\s*"([^"]+)"', content)
+        pass_match = re.search(r'proxmox_password\s*=\s*"([^"]+)"', content)
+        node_match = re.search(r'target_node\s*=\s*"([^"]+)"', content)
+
+        user = user_match.group(1) if user_match else ""
+        host_user = host_user_match.group(1) if host_user_match else ""
+        # Fallback: if proxmox_user is not set, build it from host user and pam realm
+        if not user:
+            candidate = host_user or "root"
+            user = candidate if "@" in candidate else f"{candidate}@pam"
+        elif "@" not in user:
+            user = f"{user}@pam"
+
+        return {
+            "url": url_match.group(1) if url_match else "",
+            "host": host_match.group(1) if host_match else "",
+            "user": user,
+            "host_user": host_user,
+            "password": pass_match.group(1) if pass_match else "",
+            "node": node_match.group(1) if node_match else "",
+        }
+    except Exception:
+        return defaults
+
+
+def _parse_tfstate_outputs(outputs: Dict) -> List[Dict]:
+    """Parse VM info from Terraform/OpenTofu outputs."""
+    summary = outputs.get("vm_summary")
+    if isinstance(summary, dict):
+        data = summary.get("value") if "value" in summary else summary
+        if isinstance(data, dict):
+            items = []
+            for name, info in data.items():
+                vm_id = info.get("id") or info.get("vm_id")
+                if vm_id is None:
+                    continue
+                items.append(
+                    {
+                        "id": str(vm_id),
+                        "name": name,
+                        "node": info.get("node"),
+                        "ip": info.get("ip"),
+                        "role": info.get("role"),
+                    }
+                )
+            if items:
+                return items
+
+    vm_ids = outputs.get("vm_ids")
+    if isinstance(vm_ids, dict):
+        data = vm_ids.get("value") if "value" in vm_ids else vm_ids
+        if isinstance(data, dict):
+            return [
+                {"id": str(vm_id), "name": name, "node": None, "ip": None, "role": None}
+                for name, vm_id in data.items()
+                if vm_id is not None
+            ]
+    return []
+
+
+def get_tfstate_vm_info() -> List[Dict]:
+    """Read terraform.tfstate to build a VM inventory list."""
+    if not TFSTATE_FILE.exists():
+        return []
+
+    try:
+        data = json.loads(TFSTATE_FILE.read_text())
+    except Exception:
+        return []
+
+    outputs = data.get("outputs", {})
+    vms = _parse_tfstate_outputs(outputs)
+    if vms:
+        return vms
+
+    resources = data.get("resources", [])
+    for res in resources:
+        if res.get("type") not in {
+            "proxmox_virtual_environment_vm",
+            "proxmox_vm_qemu",
+        }:
+            continue
+        for instance in res.get("instances", []):
+            attributes = instance.get("attributes", {})
+            vm_id = (
+                attributes.get("vm_id")
+                or attributes.get("vmid")
+                or attributes.get("id")
+            )
+            name = attributes.get("name")
+            if vm_id and name:
+                vms.append(
+                    {
+                        "id": str(vm_id),
+                        "name": name,
+                        "node": attributes.get("node_name")
+                        or attributes.get("node")
+                        or attributes.get("hostname"),
+                        "ip": attributes.get("ip"),
+                        "role": None,
+                    }
+                )
+    return vms
+
+
+def connect_proxmox(creds: Dict) -> ProxmoxAPI | None:
+    """Create a proxmoxer client from credentials."""
+    if not HAS_PROXMOXER:
+        return None
+
+    url = creds.get("url", "")
+    host_override = creds.get("host", "")
+    user = creds.get("user", "")
+    password = creds.get("password", "")
+    if not (url or host_override) or not user or not password:
+        return None
+
+    # Extract host/port from full API URL (e.g. https://host:8006/api2/json)
+    host_port_source = url or host_override
+    host_port = host_port_source.replace("https://", "").replace("http://", "")
+    host_port = host_port.split("/")[0]
+    if ":" in host_port:
+        host, port_str = host_port.split(":", 1)
+    else:
+        host, port_str = host_port, "8006"
+
+    try:
+        return ProxmoxAPI(
+            host,
+            user=user,
+            password=password,
+            verify_ssl=False,
+            port=int(port_str),
+        )
+    except Exception:
+        return None
 
 
 STAGE_DEFINITIONS = {
@@ -831,6 +999,68 @@ def destroy_infrastructure():
             409,
         )
     return jsonify({"started": True})
+
+
+@app.route("/api/vms")
+def list_vms():
+    """Return VM inventory based on terraform state."""
+    vms = get_tfstate_vm_info()
+    return jsonify({"vms": vms, "count": len(vms)})
+
+
+@app.route("/api/vm-metrics")
+def vm_metrics():
+    """Return CPU and memory usage for VMs created by OpenTofu."""
+    vms = get_tfstate_vm_info()
+    if not vms:
+        return jsonify({"available": False, "message": "No VMs found."}), 404
+
+    creds = parse_proxmox_credentials()
+    client = connect_proxmox(creds)
+    if client is None:
+        message = (
+            "Proxmox client unavailable. "
+            "Check proxmoxer installation and credentials in terraform.tfvars."
+        )
+        return jsonify({"available": False, "message": message}), 503
+
+    try:
+        stats = client.cluster.resources.get(type="vm")
+    except Exception:
+        return jsonify({"available": False, "message": "Unable to reach Proxmox API."}), 502
+
+    stats_by_id = {
+        str(entry.get("vmid")): entry
+        for entry in stats
+        if entry.get("vmid") is not None
+    }
+
+    enriched = []
+    for vm in vms:
+        vm_stat = stats_by_id.get(str(vm["id"]))
+        if not vm_stat:
+            enriched.append({**vm, "cpu_pct": None, "mem": None, "online": False})
+            continue
+
+        maxmem = vm_stat.get("maxmem") or 0
+        mem = vm_stat.get("mem") or 0
+        mem_pct = round(mem / maxmem * 100, 2) if maxmem else 0.0
+        cpu_pct = round((vm_stat.get("cpu") or 0) * 100, 2)
+        enriched.append(
+            {
+                **vm,
+                "cpu_pct": cpu_pct,
+                "mem": {
+                    "used_bytes": mem,
+                    "total_bytes": maxmem,
+                    "used_pct": mem_pct,
+                },
+                "online": True,
+                "node": vm.get("node") or vm_stat.get("node"),
+            }
+        )
+
+    return jsonify({"available": True, "vms": enriched})
 
 
 if __name__ == "__main__":

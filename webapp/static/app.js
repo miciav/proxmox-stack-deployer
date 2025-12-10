@@ -3,6 +3,14 @@ const runStatus = document.getElementById("runStatus");
 const stagesContainer = document.getElementById("stages");
 const logOutput = document.getElementById("logOutput");
 const destroyBtn = document.getElementById("destroyBtn");
+const usageCard = document.getElementById("usageCard");
+const metricsGrid = document.getElementById("metricsGrid");
+const metricsStatus = document.getElementById("metricsStatus");
+const themeToggle = document.getElementById("themeToggle");
+
+let vmInventory = [];
+let metricsTimer = null;
+let currentTheme = null;
 
 const STATUS_LABELS = {
   pending: "Pending",
@@ -144,6 +152,152 @@ function toggleControls(isRunning, mode) {
   }
 }
 
+function toggleUsagePanel(visible) {
+  usageCard.hidden = !visible;
+  if (!visible) {
+    metricsStatus.textContent = "Waiting for VMs…";
+    metricsGrid.innerHTML = '<p class="muted">No VM metrics available yet.</p>';
+    metricsGrid.classList.add("empty");
+  }
+}
+
+function formatBytes(bytes) {
+  if (!bytes || bytes < 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let idx = 0;
+  while (value >= 1024 && idx < units.length - 1) {
+    value /= 1024;
+    idx += 1;
+  }
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[idx]}`;
+}
+
+function renderMetricRow(label, valueText, percent, fillClass = "") {
+  const wrapper = document.createElement("div");
+  wrapper.className = "metric-usage-row";
+
+  const labelRow = document.createElement("div");
+  labelRow.className = "metric-label";
+  labelRow.innerHTML = `<span>${label}</span><span>${valueText}</span>`;
+
+  const bar = document.createElement("div");
+  bar.className = "metric-bar";
+  const fill = document.createElement("div");
+  fill.className = `metric-bar-fill${fillClass ? " " + fillClass : ""}`;
+  fill.style.width = `${Math.min(Math.max(percent || 0, 0), 100)}%`;
+  bar.appendChild(fill);
+
+  wrapper.appendChild(labelRow);
+  wrapper.appendChild(bar);
+  return wrapper;
+}
+
+function renderMetrics(payload) {
+  const vms = payload?.vms || [];
+  if (!vms.length) {
+    metricsGrid.classList.add("empty");
+    metricsGrid.innerHTML = '<p class="muted">No VM metrics available yet.</p>';
+    return;
+  }
+
+  metricsGrid.classList.remove("empty");
+  metricsGrid.innerHTML = "";
+
+  vms.forEach((vm) => {
+    const card = document.createElement("div");
+    card.className = "metric-card";
+
+    const header = document.createElement("div");
+    header.className = "metric-header";
+
+    const name = document.createElement("p");
+    name.className = "metric-name";
+    name.textContent = vm.name || `VM ${vm.id}`;
+
+    const pill = document.createElement("span");
+    pill.className = `pill${vm.online ? "" : " offline"}`;
+    pill.textContent = vm.online ? "Online" : "Offline";
+
+    header.appendChild(name);
+    header.appendChild(pill);
+    card.appendChild(header);
+
+    const meta = document.createElement("p");
+    meta.className = "metric-meta";
+    const parts = [`ID ${vm.id}`];
+    if (vm.node) parts.push(`Node ${vm.node}`);
+    meta.textContent = parts.join(" • ");
+    card.appendChild(meta);
+
+    const usage = document.createElement("div");
+    usage.className = "metric-usage";
+
+    const cpuLabel =
+      vm.cpu_pct !== null && vm.cpu_pct !== undefined
+        ? `${vm.cpu_pct}%`
+        : "n/a";
+    usage.appendChild(renderMetricRow("CPU", cpuLabel, vm.cpu_pct || 0));
+
+    const mem = vm.mem || {};
+    const memPct = mem.used_pct || 0;
+    const memLabel =
+      mem.used_bytes !== undefined && mem.total_bytes
+        ? `${formatBytes(mem.used_bytes)} / ${formatBytes(
+            mem.total_bytes
+          )} (${memPct}%)`
+        : "n/a";
+    usage.appendChild(
+      renderMetricRow("Memory", memLabel, memPct, "memory")
+    );
+
+    card.appendChild(usage);
+    metricsGrid.appendChild(card);
+  });
+}
+
+async function refreshInventory() {
+  try {
+    const response = await fetch("/api/vms");
+    if (!response.ok) throw new Error("Inventory request failed");
+    const payload = await response.json();
+    vmInventory = payload.vms || [];
+    toggleUsagePanel(vmInventory.length > 0);
+
+    if (vmInventory.length && !metricsTimer) {
+      await refreshMetrics();
+      metricsTimer = setInterval(refreshMetrics, 5000);
+    } else if (!vmInventory.length && metricsTimer) {
+      clearInterval(metricsTimer);
+      metricsTimer = null;
+    }
+  } catch (_err) {
+    // Leave the previous state untouched on errors
+  }
+}
+
+async function refreshMetrics() {
+  if (!vmInventory.length) {
+    toggleUsagePanel(false);
+    return;
+  }
+  metricsStatus.textContent = "Updating…";
+  try {
+    const response = await fetch("/api/vm-metrics");
+    const payload = await response.json();
+    if (!response.ok || !payload.available) {
+      metricsStatus.textContent = payload.message || "Metrics unavailable";
+      metricsGrid.classList.add("empty");
+      metricsGrid.innerHTML = '<p class="muted">No VM metrics available yet.</p>';
+      return;
+    }
+    metricsStatus.textContent = "Live from Proxmox";
+    renderMetrics(payload);
+  } catch (_err) {
+    metricsStatus.textContent = "Unable to load metrics";
+  }
+}
+
 async function startDeployment() {
   startBtn.disabled = true;
   destroyBtn.disabled = true;
@@ -208,3 +362,30 @@ startBtn.addEventListener("click", startDeployment);
 destroyBtn.addEventListener("click", destroyInfrastructure);
 requestStatus();
 setInterval(requestStatus, 2500);
+refreshInventory();
+setInterval(refreshInventory, 5000);
+
+function applyTheme(theme) {
+  currentTheme = theme;
+  document.documentElement.setAttribute("data-theme", theme);
+  localStorage.setItem("psd-theme", theme);
+  if (themeToggle) {
+    themeToggle.textContent = theme === "dark" ? "Light mode" : "Dark mode";
+  }
+}
+
+function initTheme() {
+  const stored = localStorage.getItem("psd-theme");
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const theme = stored || (prefersDark ? "dark" : "light");
+  applyTheme(theme);
+}
+
+initTheme();
+
+if (themeToggle) {
+  themeToggle.addEventListener("click", () => {
+    const next = currentTheme === "dark" ? "light" : "dark";
+    applyTheme(next);
+  });
+}

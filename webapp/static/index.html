@@ -23,6 +23,7 @@
         <div class="actions">
           <button id="startBtn" class="primary">Start Deployment</button>
           <button id="destroyBtn" class="danger">Destroy Infrastructure</button>
+          <button id="themeToggle" class="ghost" type="button">Dark mode</button>
           <p id="runStatus" class="status-label">Idle</p>
         </div>
       </header>
@@ -30,6 +31,20 @@
       <section class="card">
         <h2>Deployment stages</h2>
         <div id="stages" class="stage-list"></div>
+      </section>
+
+      <section class="card" id="usageCard" hidden>
+        <div class="metrics-header">
+          <div>
+            <p class="eyebrow">Live metrics</p>
+            <h2>VM resource usage</h2>
+            <p class="subtitle">CPU and memory reported by Proxmox</p>
+          </div>
+          <span id="metricsStatus" class="status-label">Waiting for VMs…</span>
+        </div>
+        <div id="metricsGrid" class="metrics-grid empty">
+          <p class="muted">No VM metrics available yet.</p>
+        </div>
       </section>
 
       <section class="card">
